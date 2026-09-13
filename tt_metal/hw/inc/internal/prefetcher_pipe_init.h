@@ -185,6 +185,7 @@ FORCE_INLINE void align_local_dfb_to_prefetcher_pipe_checkpoint(
     local.num_entries = static_cast<uint16_t>(cb_size_page_aligned / entry_size);
     if (local.num_tcs_to_rr == 1) {
         local.stride_size = entry_size;  // 1-entry stride in bytes
+        local.jump = local.stride_size;  // plain ring: the DM cursor jump equals the stride
         DFBTCSlot& slot = local.tc_slots[0];
         slot.base_addr = fifo_start_addr;
         slot.limit = fifo_limit_page_aligned;
@@ -277,6 +278,7 @@ FORCE_INLINE void align_local_dfb_to_prefetcher_pipe_receiver_iface(
     local.num_entries = static_cast<uint16_t>(ring_bytes / entry_size);
     if (local.num_tcs_to_rr == 1) {
         local.stride_size = entry_size;
+        local.jump = local.stride_size;  // plain ring: the DM cursor jump equals the stride
         DFBTCSlot& slot = local.tc_slots[0];
         slot.base_addr = iface.fifo_start_addr;
         slot.limit = iface.fifo_limit_page_aligned;

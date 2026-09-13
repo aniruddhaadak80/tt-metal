@@ -270,7 +270,9 @@ EmuleProgramDescriptor build_emule_descriptor(Program& program, IDevice* device)
                                                           uint16_t id,
                                                           bool is_relay,
                                                           uint8_t pipe,
-                                                          const std::optional<LLKMetadata>&) {
+                                                          const std::optional<LLKMetadata>&,
+                                                          uint8_t /*pap*/,
+                                                          uint8_t /*cap*/) {
                 kd.bindings.dfb.push_back(DfbBinding{name, id, is_relay, pipe});
             });
             k.process_semaphore_binding_handles(
