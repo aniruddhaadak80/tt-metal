@@ -101,6 +101,10 @@ GroupReference moe_group_reference(
     std::vector<uint32_t> counts(E_local, 0);
     for (uint32_t e = 0; e < E_local; ++e) {
         const uint32_t leid = local_expert_ids[e];
+        if (std::find(local_expert_ids.cbegin(), local_expert_ids.cbegin() + e, leid) !=
+            local_expert_ids.cbegin() + e) {
+            continue;
+        }
         for (uint32_t t = 0; t < total_rows; ++t) {
             for (uint32_t ki = 0; ki < k; ++ki) {
                 const uint32_t md = metadata.flat(t * k + ki);
@@ -247,7 +251,7 @@ DeviceOutputs run_op(
     return out;
 }
 
-void check_against_reference(
+DeviceOutputs check_against_reference(
     const ttml::test_utils::moe::MoeHostInputs& host, const std::vector<uint16_t>& local_expert_ids, uint32_t k) {
     const uint32_t D = static_cast<uint32_t>(host.dispatched.shape(0));
     const uint32_t B = static_cast<uint32_t>(host.dispatched.shape(1));
@@ -307,6 +311,8 @@ void check_against_reference(
             EXPECT_FLOAT_EQ(got, exp) << "grouped[" << i << ", " << hh << "] (plan=" << src << ")";
         }
     }
+
+    return out;
 }
 
 }  // namespace
@@ -338,6 +344,40 @@ TEST_F(MoeGroupTest, ExpertZeroActive) {
     // local expert 5 is never present in metadata (E=4 → ids in [0,3]).
     const std::vector<uint16_t> leids = {0, 5};
     check_against_reference(make_inputs(D, B, S, H, E, K), leids, K);
+}
+
+TEST_F(MoeGroupTest, DuplicateLocalExpertIdsUseFirstOccurrenceOnCacheHit) {
+    constexpr uint32_t D = 1, B = 1, S = 1, H = 64;
+    constexpr uint32_t E = 1, K = 1;
+    auto* device = &ttml::autograd::ctx().get_device();
+    device->enable_program_cache();
+
+    const auto host = make_inputs(D, B, S, H, E, K);
+    check_against_reference(host, /*local_expert_ids=*/{0, 1}, K);
+    const auto entries_before_duplicate = device->num_program_cache_entries();
+
+    // The first expert owns the sole active row; the duplicate slot must have
+    // count zero and an empty [32, 32) interval. The old kernel instead
+    // returned counts=[1,1] and offsets=[0,32,64].
+    check_against_reference(host, /*local_expert_ids=*/{0, 0}, K);
+
+    EXPECT_EQ(device->num_program_cache_entries(), entries_before_duplicate)
+        << "duplicate local IDs compiled a value-specific program instead of reusing runtime arguments";
+}
+
+TEST_F(MoeGroupTest, DuplicateLocalExpertIdsRemainWithinAllocatedCapacity) {
+    constexpr uint32_t D = 1, B = 1, S = 2048, H = 32;
+    constexpr uint32_t E = 1, K = 1;
+
+    // Every row selects expert 0. Before duplicate suppression, both local
+    // positions emitted all 2048 rows independently, so their terminal offset
+    // exceeded the min(E_local, K)-based output capacity.
+    const auto out = check_against_reference(make_inputs(D, B, S, H, E, K), /*local_expert_ids=*/{0, 0}, K);
+
+    ASSERT_EQ(out.counts, (std::vector<uint32_t>{D * B * S, 0U}));
+    ASSERT_EQ(out.offsets.size(), 3U);
+    EXPECT_EQ(out.offsets[1], out.offsets[2]) << "later duplicate must own an empty interval";
+    EXPECT_LE(out.offsets.back(), out.T_cap) << "duplicate IDs exceeded the allocated grouped/side-tensor capacity";
 }
 
 TEST_F(MoeGroupTest, AllTokensActiveForAllExperts) {
