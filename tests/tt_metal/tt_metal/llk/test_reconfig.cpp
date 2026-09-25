@@ -660,9 +660,12 @@ bool single_core_unpack_reconfig_quasar(const std::shared_ptr<distributed::MeshD
     return pass;
 }
 
-bool single_core_pack_reconfig_quasar(const std::shared_ptr<distributed::MeshDevice>& mesh_device) {
-    // Same 3×2 matmul flow as unpack reconfig; pack reconfig+init per output at pack time; see
-    // reconfig_pack_quasar.cpp.
+bool single_core_pack_reconfig_quasar(
+    const std::shared_ptr<distributed::MeshDevice>& mesh_device,
+    const std::string& compute_kernel,
+    const bool same_output_format) {
+    // Same 3x2 matmul flow as unpack reconfig. The caller selects either the low-level positive
+    // control or the tt-train helper regression kernel.
     const std::uint32_t f16_tile_size = tt::tile_size(tt::DataFormat::Float16_b);
     const std::uint32_t f32_tile_size = tt::tile_size(tt::DataFormat::Float32);
 
@@ -680,12 +683,21 @@ bool single_core_pack_reconfig_quasar(const std::shared_ptr<distributed::MeshDev
 
     auto inp0_dram = distributed::MeshBuffer::create(f16_buf_cfg, f16_dram_cfg, mesh_device.get());
     auto inp1_dram = distributed::MeshBuffer::create(f16_buf_cfg, f16_dram_cfg, mesh_device.get());
-    auto inp2_dram = distributed::MeshBuffer::create(f32_buf_cfg, f32_dram_cfg, mesh_device.get());
-    auto inp3_dram = distributed::MeshBuffer::create(f32_buf_cfg, f32_dram_cfg, mesh_device.get());
+    auto inp2_dram = distributed::MeshBuffer::create(
+        same_output_format ? f16_buf_cfg : f32_buf_cfg,
+        same_output_format ? f16_dram_cfg : f32_dram_cfg,
+        mesh_device.get());
+    auto inp3_dram = distributed::MeshBuffer::create(
+        same_output_format ? f16_buf_cfg : f32_buf_cfg,
+        same_output_format ? f16_dram_cfg : f32_dram_cfg,
+        mesh_device.get());
     auto inp4_dram = distributed::MeshBuffer::create(f16_buf_cfg, f16_dram_cfg, mesh_device.get());
     auto inp5_dram = distributed::MeshBuffer::create(f16_buf_cfg, f16_dram_cfg, mesh_device.get());
     auto out0_dram = distributed::MeshBuffer::create(f16_buf_cfg, f16_dram_cfg, mesh_device.get());
-    auto out1_dram = distributed::MeshBuffer::create(f32_buf_cfg, f32_dram_cfg, mesh_device.get());
+    auto out1_dram = distributed::MeshBuffer::create(
+        same_output_format ? f16_buf_cfg : f32_buf_cfg,
+        same_output_format ? f16_dram_cfg : f32_dram_cfg,
+        mesh_device.get());
     auto out2_dram = distributed::MeshBuffer::create(f16_buf_cfg, f16_dram_cfg, mesh_device.get());
 
     const experimental::DFBSpecName INP0_DFB{"in0"};
@@ -721,8 +733,10 @@ bool single_core_pack_reconfig_quasar(const std::shared_ptr<distributed::MeshDev
     };
     experimental::DataflowBufferSpec inp0_dfb_spec = make_f16_input_dfb(INP0_DFB);
     experimental::DataflowBufferSpec inp1_dfb_spec = make_f16_input_dfb(INP1_DFB);
-    experimental::DataflowBufferSpec inp2_dfb_spec = make_f32_input_dfb(INP2_DFB);
-    experimental::DataflowBufferSpec inp3_dfb_spec = make_f32_input_dfb(INP3_DFB);
+    experimental::DataflowBufferSpec inp2_dfb_spec =
+        same_output_format ? make_f16_input_dfb(INP2_DFB) : make_f32_input_dfb(INP2_DFB);
+    experimental::DataflowBufferSpec inp3_dfb_spec =
+        same_output_format ? make_f16_input_dfb(INP3_DFB) : make_f32_input_dfb(INP3_DFB);
     experimental::DataflowBufferSpec inp4_dfb_spec = make_f16_input_dfb(INP4_DFB);
     experimental::DataflowBufferSpec inp5_dfb_spec = make_f16_input_dfb(INP5_DFB);
     experimental::DataflowBufferSpec out0_dfb_spec{
@@ -733,9 +747,9 @@ bool single_core_pack_reconfig_quasar(const std::shared_ptr<distributed::MeshDev
     };
     experimental::DataflowBufferSpec out1_dfb_spec{
         .unique_id = OUT1_DFB,
-        .entry_size = f32_tile_size,
+        .entry_size = same_output_format ? f16_tile_size : f32_tile_size,
         .num_entries = 1,
-        .data_format_metadata = tt::DataFormat::Float32,
+        .data_format_metadata = same_output_format ? tt::DataFormat::Float16_b : tt::DataFormat::Float32,
     };
     experimental::DataflowBufferSpec out2_dfb_spec{
         .unique_id = OUT2_DFB,
@@ -801,7 +815,7 @@ bool single_core_pack_reconfig_quasar(const std::shared_ptr<distributed::MeshDev
 
     experimental::KernelSpec compute_spec{
         .unique_id = COMPUTE,
-        .source = "tests/tt_metal/tt_metal/test_kernels/compute/reconfig_pack_quasar.cpp",
+        .source = compute_kernel,
         .num_threads = 1,
         .dfb_bindings =
             {dfb_binding(INP0_DFB, DFBEndpoint::CONSUMER),
@@ -860,8 +874,10 @@ bool single_core_pack_reconfig_quasar(const std::shared_ptr<distributed::MeshDev
         }
         return packed;
     };
-    auto src2 = gen_random_f32(/*seed=*/0x2003);
-    auto src3 = gen_random_f32(/*seed=*/0x2004);
+    auto src2 = same_output_format ? create_random_vector_of_bfloat16(f16_tile_size, kRandMax, /*seed=*/0x2003)
+                                   : gen_random_f32(/*seed=*/0x2003);
+    auto src3 = same_output_format ? create_random_vector_of_bfloat16(f16_tile_size, kRandMax, /*seed=*/0x2004)
+                                   : gen_random_f32(/*seed=*/0x2004);
     auto src4 = create_random_vector_of_bfloat16(f16_tile_size, kRandMax, /*seed=*/0x2005);
     auto src5 = create_random_vector_of_bfloat16(f16_tile_size, kRandMax, /*seed=*/0x2006);
 
@@ -881,8 +897,6 @@ bool single_core_pack_reconfig_quasar(const std::shared_ptr<distributed::MeshDev
         }
         return out;
     };
-    auto in2 = unpack_f32(src2);
-    auto in3 = unpack_f32(src3);
     auto in4 = unpack_uint32_vec_into_bfloat16_vec(src4);
     auto in5 = unpack_uint32_vec_into_bfloat16_vec(src5);
 
@@ -922,13 +936,21 @@ bool single_core_pack_reconfig_quasar(const std::shared_ptr<distributed::MeshDev
     };
 
     auto golden_op0 = matmul_face(in0, in1);
-    auto golden_op1_f32 = matmul_face_f32(in2, in3);
     auto golden_op2 = matmul_face(in4, in5);
     auto packed_golden_op0 = pack_vector<std::uint32_t, bfloat16>(golden_op0);
     auto packed_golden_op2 = pack_vector<std::uint32_t, bfloat16>(golden_op2);
     std::vector<std::uint32_t> packed_golden_op1(elems_per_tile);
-    for (std::uint32_t e = 0; e < elems_per_tile; ++e) {
-        packed_golden_op1[e] = std::bit_cast<std::uint32_t>(golden_op1_f32[e]);
+    if (same_output_format) {
+        auto in2 = unpack_uint32_vec_into_bfloat16_vec(src2);
+        auto in3 = unpack_uint32_vec_into_bfloat16_vec(src3);
+        packed_golden_op1 = pack_vector<std::uint32_t, bfloat16>(matmul_face(in2, in3));
+    } else {
+        auto in2 = unpack_f32(src2);
+        auto in3 = unpack_f32(src3);
+        auto golden_op1_f32 = matmul_face_f32(in2, in3);
+        for (std::uint32_t e = 0; e < elems_per_tile; ++e) {
+            packed_golden_op1[e] = std::bit_cast<std::uint32_t>(golden_op1_f32[e]);
+        }
     }
 
     experimental::ProgramRunArgs params;
@@ -1053,7 +1075,11 @@ bool single_core_pack_reconfig_quasar(const std::shared_ptr<distributed::MeshDev
     };
 
     check_bf16_tile(out0_data, packed_golden_op0, 0);
-    check_f32_tile(out1_data, packed_golden_op1, 1);
+    if (same_output_format) {
+        check_bf16_tile(out1_data, packed_golden_op1, 1);
+    } else {
+        check_f32_tile(out1_data, packed_golden_op1, 1);
+    }
     check_bf16_tile(out2_data, packed_golden_op2, 2);
 
     return pass;
@@ -1131,7 +1157,15 @@ TEST_F(LLKQuasarMeshDeviceSingleCardFixture, TensixUnpackReconfigQuasarDfb) {
 
 TEST_F(LLKQuasarMeshDeviceSingleCardFixture, TensixPackReconfigQuasarDfb) {
     for (auto& device : this->devices_) {
-        ASSERT_TRUE(unit_tests::compute::reconfig::single_core_pack_reconfig_quasar(device));
+        ASSERT_TRUE(unit_tests::compute::reconfig::single_core_pack_reconfig_quasar(
+            device, "tests/tt_metal/tt_metal/test_kernels/compute/reconfig_pack_quasar.cpp", false));
+    }
+}
+
+TEST_F(LLKQuasarMeshDeviceSingleCardFixture, TensixTrainPackHelperReconfiguresQuasarDfb) {
+    for (auto& device : this->devices_) {
+        ASSERT_TRUE(unit_tests::compute::reconfig::single_core_pack_reconfig_quasar(
+            device, "tests/tt_metal/tt_metal/test_kernels/compute/reconfig_pack_helper_quasar.cpp", true));
     }
 }
 
