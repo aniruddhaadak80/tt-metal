@@ -391,8 +391,6 @@ TEST_F(PrefetcherPipeSpecTestQuasar, CPU_RelayListsSamePipeTwiceFails) {
     EXPECT_SPEC_REJECTED(spec, "lists PrefetcherPipeParameter 'weights' more than once");
 }
 
-// A relay DFB aliases the pipe's lane-interleaved ring; BLOCKED relays are a separate effort, so
-// either side asking for BLOCKED is rejected when the spec builds the relay's config.
 TEST_F(PrefetcherPipeSpecTestQuasar, CPU_RelayDFBBlockedProducerFails) {
     auto spec = MakeFullPipeSpec();
     KernelNamed(spec, "receiver").dfb_bindings = {BlockedProducerOf(relay_dfb_name, "relay", /*block_size=*/4)};

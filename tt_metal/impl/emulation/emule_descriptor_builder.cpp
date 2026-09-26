@@ -265,16 +265,15 @@ EmuleProgramDescriptor build_emule_descriptor(Program& program, IDevice* device)
             kd.bindings.is_metal2 = k.is_metal2_kernel();
             kd.bindings.rta_names = k.get_runtime_arg_names();
             kd.bindings.crta_names = k.get_common_runtime_arg_names();
-            k.process_dataflow_buffer_binding_handles([&kd](
-                                                          const std::string& name,
-                                                          uint16_t id,
-                                                          bool is_relay,
-                                                          uint8_t pipe,
-                                                          const std::optional<LLKMetadata>&,
-                                                          uint8_t /*pap*/,
-                                                          uint8_t /*cap*/) {
-                kd.bindings.dfb.push_back(DfbBinding{name, id, is_relay, pipe});
-            });
+            k.process_dataflow_buffer_binding_handles(
+                [&kd](
+                    const std::string& name,
+                    uint16_t id,
+                    bool is_relay,
+                    uint8_t pipe,
+                    const std::optional<LLKMetadata>&,
+                    uint8_t /*pap*/,
+                    uint8_t /*cap*/) { kd.bindings.dfb.push_back(DfbBinding{name, id, is_relay, pipe}); });
             k.process_semaphore_binding_handles(
                 [&kd](const std::string& name, uint16_t id, auto scope, uint32_t harts) {
                     kd.bindings.sem.push_back(
