@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -97,7 +98,8 @@ ttnn::device_operation::ProgramArtifacts MorehSumOperation::MorehSumWFactory::cr
     spec.name = "moreh_sum_w";
 
     // ---- Dataflow buffers ----
-    constexpr uint32_t num_input_tiles = 2;
+    const uint32_t read_batch = std::min<uint32_t>(4u, std::max<uint32_t>(Wt, 1u));
+    const uint32_t num_input_tiles = std::max<uint32_t>(2u * read_batch, 2u);
     spec.dataflow_buffers.push_back(DataflowBufferSpec{
         .unique_id = INPUT_DFB,
         .entry_size = src0_single_tile_size,
@@ -177,7 +179,7 @@ ttnn::device_operation::ProgramArtifacts MorehSumOperation::MorehSumWFactory::cr
         .tensor_bindings = {TensorBinding{.tensor_parameter_name = INPUT_TENSOR, .accessor_name = "src"}},
         // The matmul-with-ones reduction needs a tile of 1.0f; the value is packed as two bfloat16
         // halves of one uint32_t, which the reader splats across the scaler tile.
-        .compile_time_args = {{"scaler", packed_scaler_value}},
+        .compile_time_args = {{"scaler", packed_scaler_value}, {"read_batch", read_batch}},
         .runtime_arg_schema = {.runtime_arg_names = {"num_tiles", "start_id", "mask_w"}},
         .hw_config = ttnn::create_reader_datamovement_config(),
     });

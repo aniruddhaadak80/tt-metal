@@ -14,6 +14,7 @@ void kernel_main() {
     uint32_t start_id = get_arg(args::start_id);
     uint32_t mask_w = get_arg(args::mask_w);
     constexpr uint32_t scaler = get_arg(args::scaler);
+    constexpr uint32_t BATCH = get_arg(args::read_batch);
 
     DataflowBuffer dfb_in2_obj(dfb::scaler);
     generate_mm_scaler(dfb_in2_obj, scaler);
@@ -32,7 +33,20 @@ void kernel_main() {
     DataflowBuffer dfb_in0_obj(dfb::input);
     const auto in0_tile_bytes = dfb_in0_obj.get_tile_size();
 
-    for (uint32_t i = start_id; i < start_id + num_tiles; i++) {
+    // Batch NoC reads into distinct CB slots with one barrier per batch.
+    // The factory allocates 2*BATCH tiles to overlap reads with compute.
+    const uint32_t end_id = start_id + num_tiles;
+    uint32_t i = start_id;
+    for (; i + BATCH <= end_id; i += BATCH) {
+        dfb_in0_obj.reserve_back(BATCH);
+        for (uint32_t j = 0; j < BATCH; ++j) {
+            noc.async_read(s, dfb_in0_obj, in0_tile_bytes, {.page_id = i + j}, {.offset_bytes = j * in0_tile_bytes});
+        }
+        noc.async_read_barrier();
+        dfb_in0_obj.push_back(BATCH);
+    }
+    // Remainder (num_tiles not a multiple of BATCH).
+    for (; i < end_id; ++i) {
         dfb_in0_obj.reserve_back(onetile);
         noc.async_read(s, dfb_in0_obj, in0_tile_bytes, {.page_id = i}, {.offset_bytes = 0});
         noc.async_read_barrier();
