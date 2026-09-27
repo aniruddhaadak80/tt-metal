@@ -77,12 +77,13 @@ class TtMobileNetV2Conv2D:
         return conv_config
 
     def _initialize_compute_config(self):
+        # Enable L1 accumulation on Blackhole; its extra storage can exhaust Wormhole L1.
         return ttnn.init_device_compute_kernel_config(
             self.device.arch(),
             math_fidelity=ttnn.MathFidelity.LoFi,
             math_approx_mode=False,
             fp32_dest_acc_en=False,
-            packer_l1_acc=False,
+            packer_l1_acc=(self.device.arch() == ttnn.device.Arch.BLACKHOLE),
         )
 
     def __call__(self, x):

@@ -46,11 +46,12 @@ class Conv:
         self.device = device
         self.cache = {}
 
+        # Enable L1 accumulation on Blackhole; its extra storage can exhaust Wormhole L1.
         self.compute_config = ttnn.init_device_compute_kernel_config(
             device.arch(),
             math_fidelity=ttnn.MathFidelity.LoFi,
             fp32_dest_acc_en=False,
-            packer_l1_acc=False,
+            packer_l1_acc=(device.arch() == ttnn.device.Arch.BLACKHOLE),
             math_approx_mode=True,
         )
         self.conv_output_dtype = conv_param.dtype
@@ -124,11 +125,12 @@ class Conv_transpose:
         self.device = device
         self.cache = {}
 
+        # Enable L1 accumulation on Blackhole; its extra storage can exhaust Wormhole L1.
         self.compute_config = ttnn.init_device_compute_kernel_config(
             device.arch(),
             math_fidelity=ttnn.MathFidelity.LoFi,
             fp32_dest_acc_en=False,
-            packer_l1_acc=False,
+            packer_l1_acc=(device.arch() == ttnn.device.Arch.BLACKHOLE),
             math_approx_mode=True,
         )
         # check if conv_params contains tile layout and set tile if it does

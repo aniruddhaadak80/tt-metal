@@ -26,10 +26,12 @@ def pad_dimension_t(x: ttnn.Tensor, padding_z) -> ttnn.Tensor:
 def get_conv3d_config(in_channels, out_channels, kernel_size, grid_size):
     config_to_blocking = {
         # (in_channels, out_channels, kernel_size) -> (C_in_block, C_out_block, T_out_block, H_out_block, W_out_block)
-        (32, 32, 3): (32, 32, 1, 1, 16),
+        # Larger spatial blocks improve input and weight reuse; blocks must divide the output dimensions.
+        (32, 32, 3): (32, 32, 2, 8, 16),
         (32, 64, 3): (32, 32, 2, 2, 16),
-        (64, 64, 3): (32, 32, 1, 1, 16),
+        (64, 64, 3): (32, 32, 1, 8, 16),
         (64, 128, 3): (32, 64, 1, 1, 16),
+        (256, 128, 3): (32, 32, 1, 8, 8),
         (128, 128, 3): (64, 64, 1, 1, 16),
         (128, 256, 3): (64, 64, 1, 1, 8),
         (384, 128, 3): (128, 64, 1, 1, 4),
