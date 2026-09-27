@@ -17,7 +17,6 @@ from models.common.utility_functions import (
 from tests.ttnn.utils_for_testing import assert_with_pcc, assert_numeric_metrics, assert_equal
 from ttnn.operations.activations import get_golden_function_for_activation
 
-
 # for setting up multi-device stress tests
 NUM_DEVICES_ENV_KEY = "USE_NUM_DEVICES"
 NUM_DEVICES = ttnn.distributed.get_num_pcie_devices() if os.environ.get(NUM_DEVICES_ENV_KEY, None) is not None else 1
@@ -4837,3 +4836,29 @@ def test_matmul_fp32_crossblock_reload_untilize_precision(device, packer_l1_acc)
         check_frobenius=True,
         check_ulp=False,
     )
+
+
+@pytest.mark.parametrize("out_subblock_h, out_subblock_w", [(1, 2), (2, 4), (2, 2)])
+def test_matmul_reuse_sharded_output_subblock_layout(device, expect_error, out_subblock_h, out_subblock_w):
+    torch.manual_seed(0)
+    a = torch.randint(-2, 3, (1, 1, 128, 128)).to(torch.bfloat16)
+    b = torch.eye(128, dtype=torch.bfloat16).reshape(1, 1, 128, 128)
+    memory_config = ttnn.create_sharded_memory_config(
+        a.shape, core_grid=ttnn.CoreGrid(x=1, y=1), strategy=ttnn.ShardStrategy.HEIGHT
+    )
+    a_tt = ttnn.from_torch(a, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device, memory_config=memory_config)
+    b_tt = ttnn.from_torch(b, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device, memory_config=memory_config)
+    config = ttnn.MatmulMultiCoreReuseProgramConfig(
+        compute_with_storage_grid_size=(1, 1),
+        in0_block_w=4,
+        out_subblock_h=out_subblock_h,
+        out_subblock_w=out_subblock_w,
+        per_core_M=4,
+        per_core_N=4,
+    )
+    if out_subblock_h > 1 and out_subblock_w != 4:
+        with expect_error(RuntimeError, r"Either out_subblock_w.*must equal per_core_N"):
+            ttnn.matmul(a_tt, b_tt, program_config=config, memory_config=memory_config)
+    else:
+        result = ttnn.matmul(a_tt, b_tt, program_config=config, memory_config=memory_config)
+        torch.testing.assert_close(ttnn.to_torch(result), a, rtol=0, atol=0)
