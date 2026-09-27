@@ -5863,7 +5863,6 @@ def test_conv2d_fp32_input_no_fp16_saturation(device):
     assert passed, msg
 
 
-
 @pytest.mark.parametrize("device_params", [{"l1_small_size": 16384}], indirect=True)
 @pytest.mark.parametrize(
     "shard_layout, output_channels, input_channels, input_height, input_width, config",
@@ -5910,4 +5909,60 @@ def test_conv2d_row_major_host_sharding_alignment_regression(
         input_layout=ttnn.ROW_MAJOR_LAYOUT,
         output_layout=ttnn.TILE_LAYOUT,
         has_bias=True,
+    )
+
+
+# Cover shared partial/output storage and dedicated partials for untilized output.
+@pytest.mark.parametrize("device_params", [{"l1_small_size": 32768}], indirect=True)
+@pytest.mark.parametrize(
+    "output_layout, packer_l1_acc, has_bias",
+    [
+        (ttnn.TILE_LAYOUT, False, False),
+        (ttnn.ROW_MAJOR_LAYOUT, False, False),
+        (ttnn.ROW_MAJOR_LAYOUT, True, True),
+        (ttnn.ROW_MAJOR_LAYOUT, False, True),
+        (ttnn.TILE_LAYOUT, True, True),
+        (ttnn.TILE_LAYOUT, False, True),
+        (ttnn.TILE_LAYOUT, True, False),
+    ],
+    ids=[
+        "software_reload_tiled_alias",
+        "software_reload_untilize",
+        "l1acc_bias_untilize",
+        "software_reload_bias_untilize",
+        "l1acc_bias_tiled_alias",
+        "software_reload_bias_alias",
+        "l1acc_tiled_alias",
+    ],
+)
+@pytest.mark.parametrize("act_block_h", [0, 32], ids=["auto-block", "multiple-blocks"])
+def test_conv2d_matmul_partials_storage(
+    device,
+    torch_tensor_map,
+    output_layout,
+    packer_l1_acc,
+    has_bias,
+    act_block_h,
+):
+    run_conv(
+        device,
+        torch_tensor_map,
+        math_fidelity=ttnn.MathFidelity.HiFi4,
+        output_dtype=ttnn.bfloat16,
+        weights_dtype=ttnn.bfloat16,
+        batch_size=1,
+        output_channels=320,
+        input_channels=4,
+        input_height=128,
+        input_width=128,
+        filter_height=3,
+        filter_width=3,
+        stride_h=1,
+        stride_w=1,
+        padding=(1, 1),
+        config_override={"act_block_h": act_block_h} if act_block_h else None,
+        shard_layout=HS,
+        has_bias=has_bias,
+        packer_l1_acc=packer_l1_acc,
+        output_layout=output_layout,
     )
