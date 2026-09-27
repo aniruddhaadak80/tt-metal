@@ -6,11 +6,13 @@
 Scoped deliberately narrow. What is unique here is the RMSNorm + indexed-RoPE wrapper the compressor
 puts around ``ttnn.experimental.deepseek_prefill.csa_compressor`` -- the op's own pooling and state
 output are checked bit-exactly against a torch reference in
-``tests/op_unit_tests/test_csa_compressor.py``, and the compressed entries this produces are checked
-end-to-end against ``ref.compressor(...)`` by the cache-PCC leg of ``tests/pcc/test_ttnn_csa.py``.
-That wrapper does not vary with the prompt length or the model variant, so this runs one ragged shape
-on flash only, once per mesh. The ragged length is the interesting one: it leaves a partial
-compression window, so the trim to ``valid_entries`` has something to trim.
+``tests/op_unit_tests/test_csa_compressor.py``. Here the compressed entries are checked against the
+reference ``DeepseekV4CSACompressor``; the outgoing state has no reference counterpart, so it is
+checked against the op's torch model.
+
+That wrapper does not vary with the prompt length or the model variant, so this runs one shape on
+flash only, once per mesh, both aligned and ragged. Aligned is what prefill produces; ragged leaves a
+partial compression window, so the trim to ``valid_entries`` has something to trim.
 
 The length is given per chip and scaled by the mesh's SP factor, so every mesh runs the same local
 shape and a profile taken on one box describes the others."""
@@ -19,31 +21,30 @@ import pytest
 import torch
 
 import ttnn
-from models.demos.deepseek_v3_d_p.reference.deepseek_v4.modeling_deepseek_v4 import (
-    DeepseekV4CSACompressor,
-    apply_rotary_pos_emb,
-)
+from models.demos.deepseek_v3_d_p.reference.deepseek_v4.modeling_deepseek_v4 import DeepseekV4CSACompressor
 from models.demos.deepseek_v3_d_p.reference.deepseek_v4_flash_config import DeepSeekV4FlashConfig
 from models.demos.deepseek_v3_d_p.tests.op_unit_tests.test_csa_compressor import _torch_csa_compressor
 from models.demos.deepseek_v3_d_p.tests.pcc.mesh_configs import V4_MESH_CONFIGS
-from models.demos.deepseek_v3_d_p.tests.pcc.test_ttnn_csa import _SEED, _config
+from models.demos.deepseek_v3_d_p.tests.pcc.v4_test_utils import V4_SEED, v4_reference_config
 from models.demos.deepseek_v3_d_p.tt.mla.compressor import CSA_STATE_ROWS, TtCSACompressor
 from tests.ttnn.utils_for_testing import assert_with_pcc
 
-# PER-CHIP padded prompt length, not global, matching tests/pcc/test_ttnn_csa.py.
+# PER-CHIP padded prompt length, not global.
 _LOCAL_SHAPES = [640]
 # How far short of a whole slab the real prompt stops. prepare_input pads it straight back up, so the
-# per-chip shape is exactly _LOCAL_SHAPES while the last rank still ends mid-window.
-_RAGGED_TAIL = 2
+# per-chip shape is exactly _LOCAL_SHAPES either way; a nonzero tail leaves the last rank mid-window.
+_TAILS = [0, 2]
+_TAIL_IDS = ["aligned", "ragged"]
 _PCC = 0.999
 
 
-def _golden(reference, hidden_states, seq_len_actual, compress_rate, sp_factor, initial_kv, initial_score, head_dim):
-    batch, seq_len, _ = hidden_states.shape
+def _golden_state(
+    reference, hidden_states, seq_len_actual, compress_rate, sp_factor, initial_kv, initial_score, head_dim
+):
     kv = reference.kv_proj(hidden_states).unsqueeze(1).to(torch.bfloat16)
     gate = reference.gate_proj(hidden_states).unsqueeze(1).to(torch.bfloat16)
     position_bias = reference.position_bias.reshape(1, 1, compress_rate, -1).to(torch.bfloat16)
-    pooled, kv_state, score_state = _torch_csa_compressor(
+    _, kv_state, score_state = _torch_csa_compressor(
         kv,
         gate,
         position_bias,
@@ -54,31 +55,27 @@ def _golden(reference, hidden_states, seq_len_actual, compress_rate, sp_factor, 
         0,
         head_dim,
     )
-    valid_entries = seq_len_actual // compress_rate
-    compressed = reference.kv_norm(pooled[:, 0, :valid_entries].to(hidden_states.dtype))
-    positions = torch.arange(valid_entries, device=compressed.device) * compress_rate
-    positions = positions.unsqueeze(0).expand(batch, -1)
-    cos, sin = reference.rotary_emb(compressed, position_ids=positions, layer_type="compress")
-    compressed = apply_rotary_pos_emb(compressed.unsqueeze(1), cos, sin)
-    return compressed, kv_state, score_state
+    return kv_state, score_state
 
 
+@pytest.mark.parametrize("tail", _TAILS, ids=_TAIL_IDS)
 @pytest.mark.parametrize("local_seq_len", _LOCAL_SHAPES, ids=[f"local{s}" for s in _LOCAL_SHAPES])
 @pytest.mark.parametrize(
     "mesh_device, device_params, topology",
     V4_MESH_CONFIGS,
     indirect=["mesh_device", "device_params"],
 )
-def test_csa_compressor_mesh(mesh_device, device_params, topology, local_seq_len):
-    torch.manual_seed(_SEED)
+def test_csa_compressor_mesh(mesh_device, device_params, topology, local_seq_len, tail):
+    torch.manual_seed(V4_SEED)
 
-    config = _config(DeepSeekV4FlashConfig)
+    config = v4_reference_config(DeepSeekV4FlashConfig)
     reference = DeepseekV4CSACompressor(config).eval()
     with torch.no_grad():
         reference.position_bias.normal_(0.0, 0.02)
         reference.kv_norm.weight.uniform_(0.5, 1.5)
+        reference.indexer.position_bias.normal_(0.0, 0.02)
 
-    seq_len = local_seq_len * mesh_device.shape[0] - _RAGGED_TAIL
+    seq_len = local_seq_len * mesh_device.shape[0] - tail
     hidden = torch.randn(1, seq_len, config.hidden_size)
     compress_rate = config.compress_rates["compressed_sparse_attention"]
     hidden_padded, seq_len_actual = TtCSACompressor.prepare_input(hidden, mesh_device.shape[0], compress_rate)
@@ -86,7 +83,15 @@ def test_csa_compressor_mesh(mesh_device, device_params, topology, local_seq_len
     initial_kv = torch.zeros(1, 1, CSA_STATE_ROWS, head_dim, dtype=torch.bfloat16)
     initial_score = torch.full_like(initial_kv, float("-inf"))
     with torch.no_grad():
-        expected, expected_kv_state, expected_score_state = _golden(
+        # Unpadded prompt: the reference drops the partial window itself, leaving seq_len_actual // m entries.
+        expected, _ = reference(
+            hidden,
+            torch.zeros(1, seq_len_actual, config.q_lora_rank),
+            torch.arange(seq_len_actual).unsqueeze(0),
+            past_key_values=None,
+            layer_idx=0,
+        )
+        expected_kv_state, expected_score_state = _golden_state(
             reference,
             hidden_padded,
             seq_len_actual,
