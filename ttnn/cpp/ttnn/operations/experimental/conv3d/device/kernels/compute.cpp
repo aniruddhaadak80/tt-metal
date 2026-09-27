@@ -8,6 +8,7 @@
 
 #include "api/compute/tilize.h"
 #include "api/compute/matmul.h"
+#include "ttnn/cpp/ttnn/kernel_lib/matmul/matmul.hpp"
 #include "api/compute/compute_kernel_hw_startup.h"
 #include "api/compute/bcast.h"
 #include "api/compute/eltwise_binary.h"
@@ -18,66 +19,6 @@
 #include "ttnn/cpp/ttnn/kernel_lib/dest_helpers.hpp"
 #include "ttnn/cpp/ttnn/kernel_lib/tilize_helpers.hpp"
 #include "ttnn/cpp/ttnn/kernel_lib/untilize_helpers.hpp"
-
-// Slightly modified from compute_common.hpp
-void matmul_blocks(
-    const uint32_t in0_cb,
-    const uint32_t in1_cb,
-    const uint32_t out_cb,
-    const uint32_t M,
-    const uint32_t N,
-    const uint32_t K,
-    const uint32_t in0_num_subblocks,
-    const uint32_t in1_num_subblocks,
-    const uint32_t in0_block_w,
-    const uint32_t subblock_h,
-    const uint32_t subblock_w,
-    const bool transpose) {
-    // precondition: in0_cb has M*K produced
-    // precondition: in1_cb has K*N produced
-    // postcondition: in0_cb is full, in1_cb is empty
-    // postcondition: out_cb has M*N produced
-    // Restore matmul formats before init validates them; the fp32 tail may have changed them.
-    // Matmul maps input 0 to SrcB and input 1 to SrcA.
-    reconfig_data_format(in1_cb, in0_cb);
-    matmul_block_init(
-        in0_cb, in1_cb, transpose /*transpose*/, subblock_w /*ct_dim*/, subblock_h /*rt_dim*/, in0_block_w /*kt_dim*/);
-
-    uint32_t output_num_tiles = M * N;
-    uint32_t out_subblock_num_tiles = subblock_h * subblock_w;
-    uint32_t in0_index_offset = 0;
-
-    CircularBuffer out_cb_obj(out_cb);
-
-    for (uint32_t in0_subblock = 0; in0_subblock < in0_num_subblocks; ++in0_subblock) {
-        uint32_t in1_index_offset = 0;
-        for (uint32_t in1_subblock = 0; in1_subblock < in1_num_subblocks; ++in1_subblock) {
-            tile_regs_acquire();
-
-            uint32_t dst_index = 0;
-            uint32_t in0_index = in0_index_offset;
-            uint32_t in1_index = in1_index_offset;
-
-            for (uint32_t inner_dim = 0; inner_dim < in0_block_w; inner_dim++) {
-                matmul_block(
-                    in0_cb, in1_cb, in0_index, in1_index, dst_index, transpose, subblock_w, subblock_h, in0_block_w);
-                in0_index++;
-                in1_index += N;
-            }
-            tile_regs_commit();
-
-            out_cb_obj.reserve_back(out_subblock_num_tiles);
-            tile_regs_wait();
-            for (uint32_t i = 0; i < out_subblock_num_tiles; i++) {
-                pack_tile(i, out_cb);
-            }
-            out_cb_obj.push_back(out_subblock_num_tiles);
-            tile_regs_release();
-            in1_index_offset += subblock_w;
-        }
-        in0_index_offset += subblock_h * in0_block_w;
-    }
-}
 
 ALWI void pack_tile_with_wh_destination_wait(uint32_t tile, uint32_t out_cb, uint32_t pack_sequence_idx) {
 #if defined(ARCH_WORMHOLE)
@@ -369,12 +310,11 @@ void kernel_main() {
     constexpr uint32_t batch_tiles = subblock_h * matmul_K_t;
     constexpr uint32_t subblock_tiles = subblock_h * matmul_N_t;
 
-    CircularBuffer cb_vol2col_rm_cb(cb_vol2col_rm);
     CircularBuffer cb_vol2col_tiled_cb(cb_vol2col_tiled);
     CircularBuffer cb_weight_tiled_cb(cb_weight_tiled);
     CircularBuffer cb_bias_tiled_cb(cb_bias_tiled);
     CircularBuffer cb_matmul_interm_tiled_cb(cb_matmul_interm_tiled);
-    CircularBuffer cb_matmul_result_rm_cb(cb_matmul_result_rm);
+
     CircularBuffer cb_reduction_tiled_cb(cb_reduction_tiled);
     CircularBuffer cb_worker_ack_back_cb(cb_worker_ack_back);
 
@@ -452,20 +392,24 @@ void kernel_main() {
                                     cb_weight_tiled_cb.wait_front(weight_tiles);
 
                                     // Phase 2: matmul the batch
-                                    cb_vol2col_tiled_cb.wait_front(batch_tiles);
-                                    matmul_blocks(
+                                    reconfig_data_format(cb_weight_tiled, cb_vol2col_tiled);
+                                    compute_kernel_lib::matmul<
+                                        /*transpose_in1=*/false,
+                                        /*packer_l1_acc=*/false,
+                                        compute_kernel_lib::matmul_config::InitMode::Initialize,
+                                        compute_kernel_lib::matmul_config::InputPolicy::WaitAndRetainOnLastBlock,
+                                        compute_kernel_lib::matmul_config::DataFormatReconfig::None>(
                                         cb_vol2col_tiled,
                                         cb_weight_tiled,
                                         cb_matmul_interm_tiled,
-                                        subblock_h,
-                                        matmul_N_t,
-                                        matmul_K_t,
-                                        in0_num_subblocks,
-                                        in1_num_subblocks,
-                                        in0_block_w,
-                                        subblock_h,
-                                        subblock_w,
-                                        false /* transpose */);
+                                        cb_matmul_interm_tiled,
+                                        compute_kernel_lib::MatmulShape::of(
+                                            in0_num_subblocks,
+                                            in1_num_subblocks,
+                                            subblock_h,
+                                            subblock_w,
+                                            in0_block_w,
+                                            /*num_k_blocks=*/1));
                                     cb_vol2col_tiled_cb.pop_front(batch_tiles);
 
                                     if constexpr (enable_streaming_output) {
