@@ -36,10 +36,15 @@ void FrobeniusNormalizeDeviceOperation::validate_on_program_cache_miss(
         input_tensor.memory_config().memory_layout() == tt::tt_metal::TensorMemoryLayout::INTERLEAVED,
         "FrobeniusNormalize requires INTERLEAVED memory layout. Got: {}",
         enchantum::to_string(input_tensor.memory_config().memory_layout()));
+    TT_FATAL(
+        input_tensor.buffer()->buffer_type() == tt::tt_metal::BufferType::DRAM,
+        "FrobeniusNormalize requires input in DRAM. Got: {}",
+        enchantum::to_string(input_tensor.buffer()->buffer_type()));
 
     if (tensor_args.preallocated_output.has_value()) {
         const auto& output = tensor_args.preallocated_output.value();
         TT_FATAL(output.storage_type() == ttnn::StorageType::DEVICE, "Preallocated output must be on Device");
+        TT_FATAL(output.buffer() != nullptr, "Preallocated output buffer is null");
         TT_FATAL(output.layout() == tt::tt_metal::Layout::TILE, "Preallocated output must be TILE layout");
         TT_FATAL(output.dtype() == tt::tt_metal::DataType::BFLOAT16, "Preallocated output must be BFLOAT16");
         TT_FATAL(output.logical_shape() == input_tensor.logical_shape(), "Preallocated output shape must match input.");
@@ -48,6 +53,13 @@ void FrobeniusNormalizeDeviceOperation::validate_on_program_cache_miss(
             output.memory_config().memory_layout() == tt::tt_metal::TensorMemoryLayout::INTERLEAVED,
             "Preallocated output requires INTERLEAVED memory layout. Got: {}",
             enchantum::to_string(output.memory_config().memory_layout()));
+        TT_FATAL(
+            output.buffer()->buffer_type() == tt::tt_metal::BufferType::DRAM,
+            "FrobeniusNormalize requires preallocated output in DRAM. Got: {}",
+            enchantum::to_string(output.buffer()->buffer_type()));
+        TT_FATAL(
+            output.tensor_spec() == input_tensor.tensor_spec(),
+            "Preallocated output TensorSpec must match input TensorSpec exactly");
     }
 }
 
@@ -57,10 +69,7 @@ FrobeniusNormalizeSpecReturn FrobeniusNormalizeDeviceOperation::compute_output_s
         return {tensor_args.preallocated_output->tensor_spec()};
     }
 
-    return {tt::tt_metal::TensorSpec(
-        tensor_args.input.logical_shape(),
-        tt::tt_metal::TensorLayout(
-            tt::tt_metal::DataType::BFLOAT16, tt::tt_metal::Layout::TILE, tensor_args.input.memory_config()))};
+    return {tensor_args.input.tensor_spec()};
 }
 
 FrobeniusNormalizeTensorReturn FrobeniusNormalizeDeviceOperation::create_output_tensors(
