@@ -416,15 +416,10 @@ class TtCSA(TtV4AttentionBase):
         chunk; no query's index list names an entry past ``total_entries``, because the score op's causal
         mask already dropped them.
 
-        Unlike every other write here the offset moves, and ``slice_write`` takes it as a host value, so
-        chunk ``c`` compiles its own program. That is bounded and shared: the offset is
-        ``c * chunk / rate``, so a prefill of N chunks has N of them, and since the hash is over tensor
-        SPECS rather than buffers, all layers reuse the same N. A single-shot prefill compiles one.
-        Getting to a single program means either a ``slice_write`` whose hash excludes the offset (its
-        ROW_MAJOR factory already rebuilds the runtime args from it, but the tiled factories bake it into
-        shared state, so the hash cannot simply drop it) or a replicated mode for
-        ``update_padded_kv_cache``, whose ``cluster_axis=None`` is block-cyclic over the whole mesh
-        rather than replicated. Both are C++ changes; neither is worth N programs."""
+        Unlike every other write here the offset moves. It stays out of the compiled program only
+        because the table is ROW_MAJOR and interleaved: ``slice_write``'s interleaved factory hashes
+        just the last-dim start, which is 0 here, while its sharded factories hash the whole start. A
+        sharded table would compile one program per chunk."""
         width = new_entries.shape[2]
         assert state.entry_count + width <= self._carry_row, (
             f"compressed cache full: writing rows [{state.entry_count}, {state.entry_count + width}) "
