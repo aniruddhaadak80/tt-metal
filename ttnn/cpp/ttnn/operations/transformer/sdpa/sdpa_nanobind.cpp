@@ -808,6 +808,16 @@ void bind_sdpa(nb::module_& mod) {
 
         Metadata path and cache fold: as ring_joint_scaled_dot_product_attention (see its docstring).
 
+        Split KV (cluster_axis=None only): Q may be sequence-sharded over mesh axis 0 alone
+        (heads may be split over axis 1) while KV is sequence-sharded over every device. The
+        stripe ratio R/S (KV shards / Q shards) must equal mesh axis 1. Each Q slab of s tiles
+        then attends to R/S KV regions of s*S/R tiles per global chunk, laid out block-cyclically:
+        global region g lives on row-major device g % R at local offset (g // R) * region.
+        Supported for dense causal chunked prefill only (no balancing, joint tokens, sliding
+        window or circular cache) with fp32_dest_acc_en=False; the gathered KV buffer must hold
+        at least R times the local KV extent. Without kv_actual_isl, logical_n must be a whole
+        number of global chunks.
+
         Returns:
             (ttnn.Tensor, ttnn.Tensor):
               - Attention output [b x nqh x N/num_devices x head_dim_v].
