@@ -5,18 +5,29 @@
 """Op-level split-KV MLA: independent TP heads and poisoned fixed-capacity caches."""
 
 import math
+import os
 from dataclasses import replace
 
 import pytest
 import torch
+from loguru import logger
 
 import ttnn
+from models.common.utility_functions import skip_with_llk_assert, skip_with_watcher
+from models.demos.deepseek_v3_d_p.utils.smbus_telemetry import is_high_power
 from tests.nightly.blackhole.sdpa.test_ring_joint_sdpa import (
+    CHUNKED_PREFILL_CHUNK_SIZE,
+    CHUNKED_PREFILL_TOTAL_SEQ,
     MESH_CONFIG,
+    RING_JOINT_PERF_MARGIN,
+    RING_MLA_CHUNKED_MODEL_CONFIGS,
+    RING_MLA_CHUNKED_PERF_CHECK_CONFIGS,
     _make_ring_mla_metadata,
     _ring_mla_host_scalar_tensor,
     close_ring_joint_sdpa_runtime,
+    compute_chunked_prefill_perf_check_utilization,
     open_ring_joint_sdpa_runtime,
+    profile_ring_joint_runtime_duration_ns,
 )
 from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import comp_pcc
 
@@ -457,3 +468,127 @@ def test_ring_mla_split_kv_rejects_unsupported_geometry(invalid_case, error, exp
             )
     finally:
         close_ring_joint_sdpa_runtime(runtime)
+
+
+def run_ring_mla_split_kv_perf(model_name, q_chunk_size, k_chunk_size, repeats=1):
+    """Profile the final chunk of a production chunked prefill through split-KV ring MLA.
+
+    Same work as test_ring_mla_chunked_perf_check (per-device Q slab, heads, latent
+    dimensions, dtypes, prefix and chunk sizes), but Q is sharded over SP only and
+    KV is block-cyclic over the complete SP x TP mesh. Returns per-repeat utilizations.
+    """
+    if MESH_CONFIG.num_devices != 32:
+        pytest.skip("Split-KV production perf is defined for the 32-device Galaxy")
+    model = RING_MLA_CHUNKED_MODEL_CONFIGS[model_name]
+    tp = MESH_CONFIG.tp_size
+    sp = MESH_CONFIG.sp_size
+    ranks = sp * tp
+    chunk = CHUNKED_PREFILL_CHUNK_SIZE
+    depth = CHUNKED_PREFILL_TOTAL_SEQ // chunk
+    perf_chunk = depth - 1
+    region = chunk // ranks
+    q_slab = chunk // sp
+    source_capacity = depth * region
+
+    config = replace(MESH_CONFIG, tp_size=sp, sp_size=tp)
+    runtime = open_ring_joint_sdpa_runtime(config, full_mesh=True)
+    try:
+        mesh = runtime.mesh_device
+        assert tuple(mesh.shape) == (sp, tp)
+        torch.manual_seed(20260928)
+        tt_q = ttnn.from_torch(
+            torch.randn(1, model.nhq * tp, sp * q_slab, model.d_q).bfloat16(),
+            dtype=model.q_dtype,
+            layout=ttnn.TILE_LAYOUT,
+            device=mesh,
+            mesh_mapper=ttnn.ShardTensor2dMesh(mesh, mesh_shape=(sp, tp), dims=[2, 1]),
+        )
+        tt_k = ttnn.from_torch(
+            torch.randn(1, 1, ranks * source_capacity, model.d_k).bfloat16(),
+            dtype=model.kv_dtype,
+            layout=ttnn.TILE_LAYOUT,
+            device=mesh,
+            mesh_mapper=ttnn.ShardTensorToMesh(mesh, dim=2),
+        )
+        scratch = ttnn.from_torch(
+            torch.zeros(1, 1, ranks * source_capacity, model.d_k).bfloat16(),
+            dtype=model.kv_dtype,
+            layout=ttnn.TILE_LAYOUT,
+            device=mesh,
+            mesh_mapper=ttnn.ReplicateTensorToMesh(mesh),
+        )
+        kwargs = dict(
+            persistent_output_buffer_kv=scratch,
+            head_dim_v=model.d_v,
+            logical_n=depth * chunk,
+            program_config=ttnn.SDPAProgramConfig(
+                compute_with_storage_grid_size=runtime.sdpa_compute_grid,
+                q_chunk_size=q_chunk_size,
+                k_chunk_size=k_chunk_size,
+                exp_approx_mode=False,
+            ),
+            compute_kernel_config=runtime.compute_kernel_config,
+            dim=2,
+            multi_device_global_semaphore=runtime.ccl_semaphore_handles,
+            num_links=runtime.num_links,
+            cluster_axis=None,
+            mesh_device=mesh,
+            topology=ttnn.Topology.Ring,
+            subdevice_id=runtime.worker_sub_device_id,
+            ccl_core_grid_offset=(runtime.ccl_column, 0),
+            use_column_major_ccl=True,
+            is_balanced=False,
+        )
+
+        def run():
+            ttnn.transformer.ring_mla(tt_q, tt_k, **kwargs)
+            ttnn.synchronize_device(mesh)
+
+        run()  # compile outside the profiled window
+        utilizations = []
+        for _ in range(repeats):
+            duration_ns, _ = profile_ring_joint_runtime_duration_ns(mesh, run)
+            # Q rows per device and heads per device match the classic SP ring, so the
+            # classic utilization model applies unchanged.
+            utilization, _ = compute_chunked_prefill_perf_check_utilization(
+                MESH_CONFIG, model, chunk, perf_chunk, duration_ns, MESH_CONFIG.sdpa_cores
+            )
+            logger.info(
+                f"split-KV ring_mla {model_name}-q{q_chunk_size}-k{k_chunk_size} 50k+5k: "
+                f"duration={duration_ns / 1e6:.3f} ms, math_util={utilization:.2f}%"
+            )
+            utilizations.append(utilization)
+        return utilizations
+    finally:
+        close_ring_joint_sdpa_runtime(runtime)
+
+
+@pytest.mark.skipif(os.environ.get("CI") == "true", reason="Performance test - skip on CI")
+@pytest.mark.parametrize("model_name", ["kimi50k", "kimi_k3"])
+def test_ring_mla_split_kv_perf_impl(model_name):
+    """Repeated split-KV profile for local A/B comparison against the classic SP ring."""
+    run_ring_mla_split_kv_perf(model_name, 32, 640, repeats=int(os.environ.get("SPLIT_KV_PERF_REPEATS", "5")))
+
+
+@pytest.mark.timeout(600)
+@pytest.mark.parametrize(
+    "model_name, q_chunk_size, k_chunk_size, ring_size_expected, expected_util",
+    RING_MLA_CHUNKED_PERF_CHECK_CONFIGS,
+    ids=[f"{cfg[0]}-q{cfg[1]}-k{cfg[2]}-ring{cfg[3]}" for cfg in RING_MLA_CHUNKED_PERF_CHECK_CONFIGS],
+)
+@skip_with_llk_assert("No need to verify LLK asserts for performance tests.")
+@skip_with_watcher("Watcher perturbs kernel timing; perf checks are not meaningful with it enabled.")
+@pytest.mark.skipif(
+    MESH_CONFIG.is_galaxy and not is_high_power(),
+    reason="galaxy perf job requires a high-power (>=130W TDP) host",
+)
+def test_ring_mla_split_kv_perf_check(model_name, q_chunk_size, k_chunk_size, ring_size_expected, expected_util):
+    """Split-KV must match the classic SP-ring utilization for the same per-device work."""
+    if MESH_CONFIG.sp_size != ring_size_expected:
+        pytest.skip(f"Expected SP size {ring_size_expected}, current topology has {MESH_CONFIG.sp_size}")
+    (utilization,) = run_ring_mla_split_kv_perf(model_name, q_chunk_size, k_chunk_size)
+    lower = expected_util * (1 - RING_JOINT_PERF_MARGIN)
+    upper = expected_util * (1 + RING_JOINT_PERF_MARGIN)
+    assert (
+        lower <= utilization <= upper
+    ), f"Split-KV math utilization {utilization:.2f}% outside the classic band [{lower:.2f}, {upper:.2f}]"
