@@ -427,15 +427,18 @@ models:
     bh_p150b_civ2_viommu: 50
     bh_loudbox: 1200
     bh_p300: 800
+  # Trace allocation sweeps provision 2x the source e2e job time for diagnostics.
   sweep_tier1:
     wh_llmbox: 131
-    wh_n150: 30
+    wh_n150: 52
     wh_galaxy: 40
-    wh_galaxy_perf: 55
-    bh_p150: 30
+    wh_galaxy_perf: 145
+    bh_p150: 52
+    bh_quietbox_2: 204
+    bh_galaxy: 60
   sweep_tier2:
     wh_n150: 30
-    wh_llmbox_perf: 60
+    wh_llmbox_perf: 106
     bh_quietbox_2: 30
     bh_p150: 30
   vllm:
