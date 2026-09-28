@@ -35,8 +35,8 @@
 #   test_group: Group identifier for selecting multiple related tests at once.
 #   test_tags: Optional list of coarse selectors for workflow_dispatch, matched exactly and
 #              OR-ed with test_type / test_group. Two vocabularies in one list: the model a
-#              leg covers (kimi_k2_6, kimi_k2_7, kimi_k3, glm_5_2, dsv4_flash, minimax_m3)
-#              and the unit under test (moe, gate, mla, hca, csa, sdpa, ccl, block, transformer,
+#              leg covers (kimi_k2_7, kimi_k3, glm_5_2, dsv4_flash, dsv4_pro, minimax_m3)
+#              and the unit under test (moe, gate, mla, hca, swa, csa, sdpa, ccl, block, transformer,
 #              kv_cache, dflash, runner, determinism). So `moe` runs every MoE leg and `kimi_k3` every K3
 #              leg. Multiple tokens UNION, they do not intersect: `moe,kimi_k3` is every MoE
 #              leg plus every K3 leg, not the K3 MoE legs.

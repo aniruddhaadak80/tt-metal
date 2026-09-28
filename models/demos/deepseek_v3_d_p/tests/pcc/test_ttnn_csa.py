@@ -454,7 +454,9 @@ def test_csa_chunked_prefill_mesh(
         chunk = torch.zeros(batch, chunk_size, config.hidden_size)
         chunk[:, :valid] = hidden[:, kv_actual : kv_actual + valid]
 
+        cache_entries = mesh_device.num_program_cache_entries()
         out_tt = tt_model(_upload(mesh_device, chunk), seq_len_actual=valid, state=state)
+        assert it == 0 or mesh_device.num_program_cache_entries() == cache_entries, f"chunk {it} recompiled"
         out = _download(mesh_device, out_tt)[:, :valid]
 
         expected = out_ref[:, kv_actual : kv_actual + valid]
