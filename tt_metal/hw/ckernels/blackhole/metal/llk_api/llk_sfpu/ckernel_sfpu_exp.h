@@ -393,17 +393,33 @@ constexpr float EXP_FP32_LOG2E = 1.442695f;  // 0x3FB8AA3B
 constexpr float EXP_FP32_NEG_LN2_HI = -6.93145752e-1f;
 constexpr float EXP_FP32_P0 = 1.37805939e-3f;
 constexpr float EXP_FP32_P1 = 8.37312452e-3f;  // 0x1.125edcp-7
+// The rest of the Juffa constants, for the fully hoisted overload (the exp op's own row loop).
+constexpr float EXP_FP32_NEG_LN2_LO = -1.42860677e-6f;
+constexpr float EXP_FP32_P2 = 4.16695364e-2f;  // 0x1.555b5ap-5
+constexpr float EXP_FP32_P3 = 1.66664720e-1f;  // 0x1.555450p-3
+constexpr float EXP_FP32_P4 = 4.99999851e-1f;  // 0x1.fffff6p-2
 
 // Non-finite behaviour of the guarded form (unsafe = false), measured on Blackhole silicon:
 //   +-NaN (either sign, quiet or signalling) -> NaN    +Inf -> +Inf    -Inf -> +0
 // unsafe = true drops both guards and preserves none of this.
 //
-// This overload takes log2(e), -ln2_hi and the two leading polynomial coefficients from the caller, each
-// either a float (materialised where used, as a literal is) or a vFloat / vConstFloatPrgmN held across a
-// row loop; see _sfpu_exp_21f_bf16_ for why the constants are template-typed. _sfpu_exp_fp32_accurate_(a)
-// below passes the literals and is what everything not hoisting reads.
-template <bool unsafe = false, typename K, typename H, typename P0, typename P1>
-sfpi_inline sfpi::vFloat _sfpu_exp_fp32_accurate_(sfpi::vFloat a, K log2e, H neg_ln2_hi, P0 p0, P1 p1) {
+// This overload takes every fp32 constant of the algorithm (log2(e), the two Cody-Waite halves of -ln2 and
+// the five non-unit polynomial coefficients) from the caller, each either a float (materialised where used,
+// as a literal is) or a vFloat / vConstFloatPrgmN held across a row loop; see _sfpu_exp_21f_bf16_ for why
+// the constants are template-typed. The five-constant overload and _sfpu_exp_fp32_accurate_(a) below
+// forward the rest as the literals; _sfpu_exp_fp32_accurate_(a) is what everything not hoisting reads.
+template <
+    bool unsafe,
+    typename K,
+    typename H,
+    typename L,
+    typename P0,
+    typename P1,
+    typename P2,
+    typename P3,
+    typename P4>
+sfpi_inline sfpi::vFloat _sfpu_exp_fp32_accurate_(
+    sfpi::vFloat a, K log2e, H neg_ln2_hi, L neg_ln2_lo, P0 p0, P1 p1, P2 p2, P3 p3, P4 p4) {
     sfpi::vInt i, e;
     sfpi::vFloat f, r, j, y;
     sfpi::vSMag16 sm;
@@ -417,14 +433,14 @@ sfpi_inline sfpi::vFloat _sfpu_exp_fp32_accurate_(sfpi::vFloat a, K log2e, H neg
 
     // f = a - i*j (two-part cody-waite)
     f = j * neg_ln2_hi + a;
-    f = j * -1.42860677e-6f + f;
+    f = j * neg_ln2_lo + f;
 
     // approximate r = exp(f) on [-ln2/2, ln2/2]
     // interleaved with conversion of i from sign-mag to two's complement via abs and copysgn
     r = r * f + p1;
-    r = r * f + 4.16695364e-2f;  // 0x1.555b5ap-5
-    r = r * f + 1.66664720e-1f;  // 0x1.555450p-3
-    r = r * f + 4.99999851e-1f;  // 0x1.fffff6p-2
+    r = r * f + p2;
+    r = r * f + p3;
+    r = r * f + p4;
     i = sfpi::abs(sfpi::as<sfpi::vInt>(sm));
     y = r * f + 1.0f;
     i = sfpi::as<sfpi::vInt>(sfpi::copysgn(sfpi::as<sfpi::vFloat>(i), j));
@@ -453,6 +469,13 @@ sfpi_inline sfpi::vFloat _sfpu_exp_fp32_accurate_(sfpi::vFloat a, K log2e, H neg
     }
 
     return y;
+}
+
+// log2(e), -ln2_hi and the two leading polynomial coefficients from the caller; the rest as literals.
+template <bool unsafe = false, typename K, typename H, typename P0, typename P1>
+sfpi_inline sfpi::vFloat _sfpu_exp_fp32_accurate_(sfpi::vFloat a, K log2e, H neg_ln2_hi, P0 p0, P1 p1) {
+    return _sfpu_exp_fp32_accurate_<unsafe>(
+        a, log2e, neg_ln2_hi, EXP_FP32_NEG_LN2_LO, p0, p1, EXP_FP32_P2, EXP_FP32_P3, EXP_FP32_P4);
 }
 
 template <bool unsafe = false>
@@ -568,10 +591,31 @@ void calculate_exponential(const uint exp_base_scale_factor = p_sfpu::kCONST_1_F
             // effectively free (no other instruction to interleave with SFPMAD).
             _sfpu_exp_21f_bf16_tti_<SCALE_EN, is_fp32_dest_acc_en, CLAMP_NEGATIVE, ITERATIONS>(exp_base_scale_factor);
         } else {
+            // fp32-dest accurate path: the Juffa exp, with its loop-invariant constants kept out of the row
+            // loop (sfpi 7.83.0 never hoists an SFPLOADI literal out of a loop by itself, so each fp32
+            // literal otherwise costs an SFPLOADI pair per row). log2(e) and p2 come from
+            // vConstFloatPrgm1/2, programmed by exp_init's fp32 arm; three more live in LRegs, loaded once
+            // per call -- the body needs the other five LRegs, so a fourth is a "too few lregs" compile
+            // error. p0 is a one-SFPLOADI fp16 value; p3 and p4 stay per-row literals (Prgm0 could take
+            // one of them, but stays 2.0f, see exp_init). Same operations in the same order as
+            // _ckernel_sfpu_exp_accurate_ (which the SDPA kernels call without this init), so the results
+            // are bit-identical to it.
+            sfpi::vFloat neg_ln2_hi = EXP_FP32_NEG_LN2_HI, neg_ln2_lo = EXP_FP32_NEG_LN2_LO, p1 = EXP_FP32_P1;
             for (int d = 0; d < ITERATIONS; d++) {
                 sfpi::vFloat val = sfpi::dst_reg[0];
-                sfpi::dst_reg[0] =
-                    _ckernel_sfpu_exp_accurate_<SCALE_EN, is_fp32_dest_acc_en>(val, exp_base_scale_factor);
+                if constexpr (SCALE_EN) {
+                    val = val * sfpi::sFloat16b(exp_base_scale_factor);
+                }
+                sfpi::dst_reg[0] = _sfpu_exp_fp32_accurate_<false>(
+                    val,
+                    sfpi::vConstFloatPrgm1,
+                    neg_ln2_hi,
+                    neg_ln2_lo,
+                    EXP_FP32_P0,
+                    p1,
+                    sfpi::vConstFloatPrgm2,
+                    EXP_FP32_P3,
+                    EXP_FP32_P4);
                 sfpi::dst_reg++;
             }
         }
@@ -1140,10 +1184,17 @@ void exp_init() {
             TTI_SFPLOADI(p_sfpu::LREG0, sfpi::SFPLOADI_MOD0_LOWER, 0xa418);
             TTI_SFPCONFIG(0, p_sfpu::LREG13, 0);
         } else {
-            // fp32 scalar path (_sfpu_exp_fp32_accurate_) — uses the scalar
-            // reciprocal LLK for negative inputs, so its constants must be
-            // primed here.
+            // fp32 path (the Juffa exp in calculate_exponential), which reads Prgm1 = log2(e) and
+            // Prgm2 = p2 on every row. The algorithm itself runs no reciprocal (the old comment here said
+            // it did; only the deleted _calculate_exponential_body_ path ever did). Prgm0 = 2.0f is still
+            // programmed, as it always has been here, and Prgm1 is the same 1/ln2 bit pattern sigmoid,
+            // silu and mish program: so a fused kernel that runs sfpu_reciprocal_init / sigmoid_init /
+            // silu_init and this init in either order before interleaving the ops keeps every constant
+            // those ops read. Prgm2 is exp's alone; no kernel that fuses exp_tile with the MoE gate code
+            // (which writes LREG14) exists, and the approx arms above already claim LREG14 too.
             sfpu_reciprocal_init<false>();
+            _init_exp_hoisted_prgm_consts_();
+            sfpi::vConstFloatPrgm2 = EXP_FP32_P2;
         }
     }
 }
