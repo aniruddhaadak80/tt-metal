@@ -67,8 +67,6 @@ def _to_qr(mesh_device, tensor):
 
 def _assert_topk_overlap(actual, expected, minimum=0.9):
     valid = expected >= 0
-    if not valid.any():
-        return
     overlaps = []
     for row_actual, row_expected, row_valid in zip(
         actual.reshape(-1, actual.shape[-1]),

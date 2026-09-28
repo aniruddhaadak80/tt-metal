@@ -22,7 +22,6 @@ import torch
 from loguru import logger
 
 import ttnn
-from models.common.utility_functions import is_blackhole
 from models.demos.deepseek_v3_d_p.tt.mla.compressor import TtCSACompressor, rope_table_tokens
 from models.demos.deepseek_v3_d_p.tt.mla.mla_config import get_indexer_key_chunk, get_matmul_config
 from models.demos.deepseek_v3_d_p.tt.mla.rope import interleaved_perm_matrix
@@ -1237,6 +1236,10 @@ class TtCsaIndexer(TtIndexerBase):
             short = cls._cache_short_name(name)
             return str(cache_path / f"layer_{layer_idx}.mla.indexer_{short}") if cache_path else None
 
+        if not idx_host and (device is None or not cls.check_cache_complete(cache_path, f"layer_{layer_idx}.mla")):
+            raise RuntimeError(
+                f"CSA indexer layer {layer_idx} has neither host weights nor a complete cache at {cache_path!r}"
+            )
         tensors = (
             dict(idx_host)
             if idx_host

@@ -307,6 +307,11 @@ void validate_chunk_start_metadata(const operation_attributes_t& attrs, const te
         attrs.has_block_cyclic(),
         "indexer_score: chunk_start_idx_tensor requires the block-cyclic layout (block_cyclic_chunk_local), "
         "whose sp/chunk_local are what the kernel derives kv_len and the causal rotation from");
+    TT_FATAL(
+        attrs.key_compression_ratio == 1,
+        "indexer_score: chunk_start_idx_tensor / valid_end_tensor support key_compression_ratio 1 only (got {}); "
+        "the valid_end cap and the fused all-gather extent are still in token units",
+        attrs.key_compression_ratio);
 
     validate_scalar_metadata_tensor(*t.chunk_start_idx_tensor, t.q, "chunk_start_idx_tensor");
 }

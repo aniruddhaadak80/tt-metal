@@ -866,8 +866,8 @@ void kernel_main() {
         // rows (those keys sit at s > t and the causal edge masks them) but NOT for pad rows, whose top-k
         // then differs from the scalar path's. Reading actual_end here reproduces the scalar bound exactly,
         // and narrows the scored extent at the same time. ceil to the 32-row write grid, matching
-        // write_k's clamp and the scalar path's own rounding. This bound is a CACHE-ROW index (kv_len's
-        // units, what write_k clamps), not a query token like chunk_start_idx above, so no ratio divide.
+        // write_k's clamp and the scalar path's own rounding. Tokens equal cache rows only at ratio 1,
+        // which validate_chunk_start_metadata enforces on this path.
         // 0 = no bound supplied (full chunk): the host zeroes this slot rather than compiling a second
         // variant, so presence costs a compare here instead of a program hash split.
         const uint32_t valid_end_addr = get_common_arg_val<uint32_t>(vend_rt_base);
