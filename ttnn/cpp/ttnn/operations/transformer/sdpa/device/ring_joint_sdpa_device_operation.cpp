@@ -1387,7 +1387,7 @@ RingJointSDPAResult ring_joint_scaled_dot_product_attention(
         const uint32_t kv_shards = ttnn::operations::ccl::common::tensor_dim_shard_factor(input_tensor_k, gather_dim);
         TT_FATAL(
             kv_shards == num_devices,
-            "Full-mesh ring MLA requires KV sequence (dim {}) shards on every device; got {} shards on {} devices",
+            "Full-mesh ring MLA requires KV sequence shards on every device (dim {}); got {} shards on {} devices",
             gather_dim,
             kv_shards,
             num_devices);
