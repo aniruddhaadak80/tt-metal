@@ -397,13 +397,15 @@ def test_ring_mla_split_kv_packed_widths(depth, k_chunk):
         pytest.param(5, 0, False, 32, 352, None, False, id="grouped-inplace-scalar"),
         pytest.param(3, 288, True, 64, 640, None, False, id="grouped-materialized-metadata"),
         pytest.param(8, 32, True, 32, 352, None, True, id="grouped-inplace-trace"),
-        pytest.param(1, 0, False, 32, 352, 32, False, id="per-source-fallback"),
+        pytest.param(1, 0, False, 32, 352, 160, False, id="per-source-fallback"),
     ],
 )
 def test_ring_mla_split_kv_rotated_q_split(depth, prefix_offset, metadata, q_chunk, k_chunk, effective_n, trace_replay):
     # 32 local heads leave float Q chunks on the Blackhole SDPA grid (256 chunks at Q32 and
     # 128 at Q64 over 110 cores), so the rotated Q split migrates them between grid rows.
-    # Grouped traversal executes only ring_size / TP of the scheduled ordinals.
+    # Grouped traversal executes only ring_size / TP of the scheduled ordinals. The fallback case
+    # leaves sources 0-2 active (160 rows over 64-row regions): per-source traversal with
+    # three active ordinals, so floats still migrate between them.
     test_ring_mla_split_kv_geometry(
         depth,
         8,
@@ -609,12 +611,17 @@ def test_ring_mla_split_kv_perf_impl(model_name):
     reason="galaxy perf job requires a high-power (>=130W TDP) host",
 )
 def test_ring_mla_split_kv_perf_check(model_name, q_chunk_size, k_chunk_size, ring_size_expected, expected_util):
-    """Split-KV must match the classic SP-ring utilization for the same per-device work."""
+    """Split-KV must not fall below the classic SP-ring utilization for the same per-device work.
+
+    Reuses the classic expected utilization on purpose: both layouts do identical math per
+    device, so a split-KV regression shows up as a gap to the classic number. One-sided, so a
+    split-KV improvement (or an upward classic retune) does not fail here.
+    """
     if MESH_CONFIG.sp_size != ring_size_expected:
         pytest.skip(f"Expected SP size {ring_size_expected}, current topology has {MESH_CONFIG.sp_size}")
     (utilization,) = run_ring_mla_split_kv_perf(model_name, q_chunk_size, k_chunk_size)
     lower = expected_util * (1 - RING_JOINT_PERF_MARGIN)
-    upper = expected_util * (1 + RING_JOINT_PERF_MARGIN)
-    assert (
-        lower <= utilization <= upper
-    ), f"Split-KV math utilization {utilization:.2f}% outside the classic band [{lower:.2f}, {upper:.2f}]"
+    assert utilization >= lower, (
+        f"Split-KV math utilization {utilization:.2f}% below the classic floor {lower:.2f}% "
+        f"(classic expected {expected_util:.2f}%)"
+    )

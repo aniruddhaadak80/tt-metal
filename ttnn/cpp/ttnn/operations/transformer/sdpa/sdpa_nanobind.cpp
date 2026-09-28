@@ -769,7 +769,7 @@ void bind_sdpa(nb::module_& mod) {
         than K and tile aligned. The KV tensor must have one shared KV head.
 
         Args:
-            input_tensor_q (ttnn.Tensor): Queries [b x nqh x N/num_devices x dh].
+            input_tensor_q (ttnn.Tensor): Queries [b x nqh x N/num_devices x dh] (N/S under split KV).
             input_tensor_kv (ttnn.Tensor): Shared KV tensor [b x nkv x N/num_devices x dh].
 
         Keyword args:
@@ -808,19 +808,21 @@ void bind_sdpa(nb::module_& mod) {
 
         Metadata path and cache fold: as ring_joint_scaled_dot_product_attention (see its docstring).
 
-        Split KV (cluster_axis=None only): Q may be sequence-sharded over mesh axis 0 alone
-        (heads may be split over axis 1) while KV is sequence-sharded over every device. The
-        stripe ratio R/S (KV shards / Q shards) must equal mesh axis 1. Each Q slab of s tiles
-        then attends to R/S KV regions of s*S/R tiles per global chunk, laid out block-cyclically:
-        global region g lives on row-major device g % R at local offset (g // R) * region.
+        Split KV (cluster_axis=None only): Q is sequence-sharded over the S devices of mesh axis 0
+        only (heads may be split over axis 1) while KV is sequence-sharded over all R devices;
+        R/S must equal the size of mesh axis 1. Q and the output then hold N/S rows per device.
+        A Q slab of s tiles spans R/S KV regions of s*S/R tiles per global chunk of s*S tiles,
+        laid out block-cyclically: global region g lives on row-major device g % R at local
+        offset (g // R) * region. Attention covers the full causal prefix across all sources.
         Supported for dense causal chunked prefill only (no balancing, joint tokens, sliding
-        window or circular cache) with fp32_dest_acc_en=False; the gathered KV buffer must hold
-        at least R times the local KV extent. Without kv_actual_isl, logical_n must be a whole
-        number of global chunks.
+        window or circular cache) with fp32_dest_acc_en=False. The gathered KV buffer must hold
+        at least R times the local KV extent, and logical_n must not exceed it. Without
+        kv_actual_isl or kv_actual_isl_tensor, logical_n must be a nonzero whole number of
+        global chunks.
 
         Returns:
             (ttnn.Tensor, ttnn.Tensor):
-              - Attention output [b x nqh x N/num_devices x head_dim_v].
+              - Attention output [b x nqh x N/num_devices x head_dim_v] (N/S rows under split KV).
               - Streaming statistics scratch [b x nqh x 2*N/num_devices x 1].
         )doc";
 

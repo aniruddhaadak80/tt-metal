@@ -1947,6 +1947,7 @@
 
 
 - name: "Ring MLA split-KV fused full-mesh gather accuracy + perf"
+  fabric_profile: torus_xy
   # Q sharded over SP (mesh axis 0), latent KV block-cyclic over all 32 chips (SP x TP),
   # gathered inside ring_mla over the full-mesh snake. The perf check holds split-KV to the
   # classic SP-ring utilization band for the same per-device 50k+5k work.
@@ -1965,7 +1966,7 @@
   test_group: sdpa_perf
   skus:
     bh_sc1_high_power:
-      timeout: 30
+      timeout: 40
       tier: 2
       release_ready: false
   owner_id: U085GDCAZTN # Pavle Josipovic

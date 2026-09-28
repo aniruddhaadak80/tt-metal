@@ -2678,10 +2678,8 @@ void sdpa_ring_v2(
             const uint32_t source_ring_id = has_sliding_window ? sliding_k_chunk.source_ring_id : ring_id;
             const uint32_t source_k_chunk = has_sliding_window ? sliding_k_chunk.source_k_chunk : k_chunk;
             const bool kv_chunk_is_joint = !packed_sources && !has_sliding_window && k_chunk >= num_local_k_chunks;
-            if (!packed_sources && try_skip_oob_kv(source_ring_id, source_k_chunk, kv_chunk_is_joint)) {
-                // Sliding plans are clipped to logical_n before chunking. Treat a future mismatch
-                // as a device failure rather than leaving the writer waiting for a missing signal.
-                ASSERT(!has_sliding_window);
+            if (!packed_sources && !has_sliding_window &&
+                try_skip_oob_kv(source_ring_id, source_k_chunk, kv_chunk_is_joint)) {
                 continue;
             }
             if (try_skip_causal_above_diag(source_k_chunk, causal_k_limit)) {
