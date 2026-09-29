@@ -79,6 +79,28 @@ TEST(RingMLAPackingPlan, MaskRunsCoverEveryColumnWithContiguousGlobalRuns) {
     }
 }
 
+TEST(RingMLAPackingPlan, MaxSlabMatchesLargestSlabInChunk) {
+    for (uint32_t region : {1u, 2u, 5u}) {
+        for (uint32_t slabs : {1u, 3u, 11u}) {
+            for (uint32_t group : {2u, 4u}) {
+                for (uint32_t chunk_tiles : {1u, 3u, 11u, 20u}) {
+                    const PackedKVGroupPlan plan{slabs * region, group, chunk_tiles};
+                    for (uint32_t chunk = 0; chunk < plan.chunk_count(); ++chunk) {
+                        uint32_t expected = 0;
+                        for (uint32_t col = 0; col < plan.valid_tiles(chunk); ++col) {
+                            const uint32_t slab = plan.source_offset(chunk * chunk_tiles + col) / region;
+                            expected = slab > expected ? slab : expected;
+                        }
+                        EXPECT_EQ(plan.max_slab(chunk, region), expected)
+                            << "region=" << region << " slabs=" << slabs << " group=" << group
+                            << " chunk_tiles=" << chunk_tiles << " chunk=" << chunk;
+                    }
+                }
+            }
+        }
+    }
+}
+
 TEST(RingMLAPackingPlan, PartialFinalChunkAndSegments) {
     const PackedKVGroupPlan plan{/*source_tiles=*/5, /*source_count=*/4, /*chunk_tiles=*/8};
     EXPECT_EQ(plan.tile_count(), 20u);

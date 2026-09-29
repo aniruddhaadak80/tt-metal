@@ -48,8 +48,20 @@ struct PackedKVGroupPlan {
         const uint32_t source_remaining = source_tiles - source_offset(chunk * chunk_tiles + destination_offset);
         return remaining < source_remaining ? remaining : source_remaining;
     }
+    // Largest local slab index among the chunk's valid tiles. A chunk that crosses into a later
+    // source contains the tail of the earlier one, i.e. that source's last slab.
+    constexpr uint32_t max_slab(uint32_t chunk, uint32_t region_tiles) const {
+        const uint32_t first = chunk * chunk_tiles;
+        const uint32_t last = first + valid_tiles(chunk) - 1;
+        if (source_index(first) != source_index(last)) {
+            return (source_tiles - 1) / region_tiles;
+        }
+        return source_offset(last) / region_tiles;
+    }
     // Emit at most chunk_tiles runs, splitting at both source and block-cyclic slab
     // boundaries. The caller supplies chunk_tiles entries, including for partial chunks.
+    // Runs once per (Q chunk, K chunk) on every compute thread, so it walks the chunk with
+    // running source/region cursors: one division by the runtime source width per call.
     constexpr uint32_t mask_runs(
         uint32_t chunk,
         const uint32_t* source_ids,
@@ -57,20 +69,32 @@ struct PackedKVGroupPlan {
         uint32_t global_chunk_tiles,
         PackedKVMaskRun* runs) const {
         const uint32_t valid = valid_tiles(chunk);
+        const uint32_t stream_start = chunk * chunk_tiles;
+        uint32_t source = source_index(stream_start);
+        uint32_t local = stream_start - source * source_tiles;
+        uint32_t slab = local / region_tiles;
+        uint32_t region_offset = local - slab * region_tiles;
         uint32_t count = 0;
         for (uint32_t column = 0; column < valid;) {
-            const uint32_t stream_tile = chunk * chunk_tiles + column;
-            const uint32_t local = source_offset(stream_tile);
-            const uint32_t region_offset = local % region_tiles;
             const uint32_t source_remaining = source_tiles - local;
             const uint32_t region_remaining = region_tiles - region_offset;
             uint32_t length = valid - column;
             length = length < source_remaining ? length : source_remaining;
             length = length < region_remaining ? length : region_remaining;
-            const uint32_t global = (local / region_tiles) * global_chunk_tiles +
-                                    source_ids[source_index(stream_tile)] * region_tiles + region_offset;
+            runs[count++] = {
+                slab * global_chunk_tiles + source_ids[source] * region_tiles + region_offset, column + length};
             column += length;
-            runs[count++] = {global, column};
+            local += length;
+            region_offset += length;
+            if (local == source_tiles) {
+                ++source;
+                local = 0;
+                slab = 0;
+                region_offset = 0;
+            } else if (region_offset == region_tiles) {
+                ++slab;
+                region_offset = 0;
+            }
         }
         return count;
     }
