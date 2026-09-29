@@ -67,9 +67,9 @@ case "${MODEL}" in
     # golden's 11 chunks, so there is nothing to shrink.
     SC1_NUM_LAYERS=24
     SC1_MAX_SEQ_LEN=56320
-    RUNNER_ENV="export PREFILL_HF_MODEL=/mnt/models/blaze/moonshotai/Kimi-K3-dequantized;"
+    RUNNER_ENV="export PREFILL_HF_MODEL=/mnt/weka/model-weights/llm/moonshotai/Kimi-K3-bf16-2496450e;"
     PRODUCER_ENV="export PREFILL_PRODUCER_MANIFEST='${MANIFEST}'; \
-        export PREFILL_TRACE_DIR=/mnt/models/deepseek-prefill-cache/golden/k3_vllm_code_debug_1M;"
+        export PREFILL_TRACE_DIR=/mnt/weka/model-cache/scratch/deepseek-ai/deepseek-prefill-cache/golden/k3_vllm_code_debug_1M;"
     ;;
   *)
     echo "unknown model key '${MODEL}'" >&2

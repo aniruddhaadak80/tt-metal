@@ -40,7 +40,7 @@ import torch
 from safetensors import safe_open
 
 # The 5-layer module-level trace and the full-model depth trace.
-GOLDEN_ROOT = Path("/mnt/models/deepseek-prefill-cache/golden")
+GOLDEN_ROOT = Path("/mnt/weka/model-cache/scratch/deepseek-ai/deepseek-prefill-cache/golden")
 TRACE_100K = GOLDEN_ROOT / "structured_traces" / "kimi_k3_100k_vllm"
 TRACE_1M = GOLDEN_ROOT / "k3_vllm_code_debug_1M"
 
