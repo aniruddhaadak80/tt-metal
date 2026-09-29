@@ -328,9 +328,8 @@ inline DataflowBuffer::~DataflowBuffer() {
     }
     finish_impl();
 #ifndef COMPILE_FOR_TRISC
-    static_assert(NUM_NOCS == 1, "Destructor barriers the default NoC; it must cover every NoC DFB writes can use");
     if (has_outbound_writes_) {
-        write_barrier_impl(Noc());
+        write_barrier_impl(noc_index);
     }
 #endif
 }
@@ -582,15 +581,15 @@ inline void DataflowBuffer::lock_release_impl(ScopedLockRegion region, uint16_t 
 
 // Consumer barrier: waits outbound write from DFB writes to arrive at their destination
 // Falls back to a full barrier when no txn_ids are assigned
-inline void DataflowBuffer::write_barrier_impl(const Noc &noc) const {
+inline void DataflowBuffer::write_barrier_impl(uint8_t noc_id) const {
     if (local_dfb_interface_.num_txn_ids == 0) {
-        noc.async_write_barrier();
+        noc_async_write_barrier(noc_id);
         return;
     } else {
         for (uint8_t i = 0; i < local_dfb_interface_.num_txn_ids; i++) {
             // Uses internal API rather than user facing noc.async_write_barrier() since it ASSERTs that the txn_id comes
             // from the user tnx ID pool and the DFB txn ids are internal only.
-            noc_async_write_barrier_with_trid(local_dfb_interface_.txn_ids[i], noc.get_noc_id());
+            noc_async_write_barrier_with_trid(local_dfb_interface_.txn_ids[i], noc_id);
         }
     }
 }

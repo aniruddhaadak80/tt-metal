@@ -422,7 +422,11 @@ private:
 #ifndef COMPILE_FOR_TRISC
     friend struct noc_traits_t<DataflowBuffer>;
 
+#ifdef ARCH_QUASAR
+    void write_barrier_impl(uint8_t noc_id) const;
+#else
     void write_barrier_impl(const Noc &noc) const;
+#endif
 #endif
 
     struct ScopedLockRegion {
