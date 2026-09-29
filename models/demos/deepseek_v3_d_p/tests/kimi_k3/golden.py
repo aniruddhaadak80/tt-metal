@@ -37,6 +37,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import torch
+from loguru import logger
 from safetensors import safe_open
 
 # The 5-layer module-level trace and the full-model depth trace.
@@ -155,8 +156,14 @@ def resolve_checkpoint() -> Path | None:
     """
     for var in ("KIMI_K3_CKPT", "KIMI_K3_HF_MODEL"):
         value = os.getenv(var)
-        if value and (Path(value) / "model.safetensors.index.json").is_file():
+        if not value:
+            continue
+        if (Path(value) / "model.safetensors.index.json").is_file():
             return Path(value)
+        # Set but unusable. Say so: the fallthrough silently substitutes the *other* checkpoint, and
+        # if that one is MXFP4 the run dies ~40 s later in load_tensors with "index is missing 2688
+        # weights", which reads like a checkpoint-content bug rather than a missing index here.
+        logger.warning(f"${var}={value} has no model.safetensors.index.json; skipping it")
     return None
 
 
