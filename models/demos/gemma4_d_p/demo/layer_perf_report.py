@@ -27,6 +27,7 @@ from pathlib import Path
 
 MANIFEST_DIR = "layer_perf"
 SUMMARY_NAME = "gemma4_d_p_layer_perf.md"
+SIGNPOST_PATTERN = re.compile(r"^gemma4-layer-(global|local)-chunk([0-9]+)-(start|stop)$")
 
 
 def summaries_root():
@@ -75,8 +76,19 @@ def _tt_perf_report_cmd():
     return [exe] if exe else [sys.executable, "-m", "tt_perf_report.perf_report"]
 
 
+def _validate_signpost(signpost, expected_edge):
+    if not isinstance(signpost, str):
+        raise ValueError(f"signpost must be a string: {signpost!r}")
+    match = SIGNPOST_PATTERN.fullmatch(signpost)
+    if match is None or match.group(3) != expected_edge:
+        raise ValueError(f"invalid {expected_edge} signpost: {signpost!r}")
+    return signpost
+
+
 def run_tt_perf_report(ops_csv, start_signpost, stop_signpost, out_csv):
     """Slice ops_csv between two signposts; writes out_csv, its _stacked summary, and a .log."""
+    _validate_signpost(start_signpost, "start")
+    _validate_signpost(stop_signpost, "stop")
     cmd = [
         *_tt_perf_report_cmd(),
         "--start-signpost",
@@ -88,7 +100,7 @@ def run_tt_perf_report(ops_csv, start_signpost, stop_signpost, out_csv):
         str(out_csv),
         str(ops_csv),
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = subprocess.run(cmd, capture_output=True, text=True, shell=False)
     Path(out_csv).with_suffix(".log").write_text(f"$ {' '.join(cmd)}\n{proc.stdout}{proc.stderr}")
     return proc.returncode == 0 and Path(out_csv).exists()
 
@@ -100,8 +112,8 @@ def _float(value):
         return None
 
 
-def summarize_cell_csv(path, top_n=5):
-    """Totals and the top ops by device time from one tt-perf-report CSV (times in microseconds)."""
+def summarize_cell_csv(path, top_n=None):
+    """Totals and operations by device time from one tt-perf-report CSV (times in microseconds)."""
     with open(path, newline="") as f:
         # Skip signposts, host ops, and rows with an invalid device duration.
         rows = [r for r in csv.DictReader(f) if _float(r.get("Device Time")) is not None]
@@ -124,12 +136,14 @@ def summarize_cell_csv(path, top_n=5):
         by_op[op][0] += device_us
         by_op[op][1] += 1
     n_ops = len(rows)
-    top = sorted(by_op.items(), key=lambda kv: kv[1][0], reverse=True)[:top_n]
+    ordered_ops = sorted(by_op.items(), key=lambda kv: kv[1][0], reverse=True)
+    if top_n is not None and top_n > 0:
+        ordered_ops = ordered_ops[:top_n]
     return {
         "n_ops": n_ops,
         "kernel_us": kernel_us,
         "span_us": kernel_us + gap_us,
-        "top_ops": [{"op": op, "device_us": us, "count": count} for op, (us, count) in top],
+        "top_ops": [{"op": op, "device_us": us, "count": count} for op, (us, count) in ordered_ops],
     }
 
 
@@ -142,7 +156,7 @@ def _cell_text(cell):
 
 
 def render_markdown(manifests):
-    """One grid (layer type x chunk) and per-cell top-op tables per manifest."""
+    """One grid (layer type x chunk) and per-cell operation tables per manifest."""
     lines = []
     for m in manifests:
         shape = "x".join(str(d) for d in m.get("mesh_shape", ()))
@@ -169,7 +183,7 @@ def render_markdown(manifests):
             if r is None:
                 continue
             lines += [
-                f"<details><summary>{c['layer_type']} chunk {c['chunk_idx']}: top ops of {r['n_ops']}</summary>",
+                f"<details><summary>{c['layer_type']} chunk {c['chunk_idx']}: all ops ({r['n_ops']})</summary>",
                 "",
                 "| Op | Device ms | % of kernel | Count |",
                 "|---|---:|---:|---:|",
@@ -185,7 +199,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--profiler-dir", default="generated/profiler", help="Tracy artifacts folder (-o)")
     parser.add_argument("--root", type=Path, default=None, help="Summaries root (default: PREFILL_SUMMARIES)")
-    parser.add_argument("--top", type=int, default=5, help="Ops listed per cell")
+    parser.add_argument("--top", type=int, default=0, help="Limit ops listed per cell; 0 lists the full table")
     args = parser.parse_args(argv)
 
     root = args.root or summaries_root()

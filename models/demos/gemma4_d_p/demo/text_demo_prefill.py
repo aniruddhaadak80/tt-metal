@@ -36,7 +36,7 @@ LAYER_PERF_CONTEXT_LENGTHS = (262144,)
 # Cells measured by chunk_idx="ci", the CI layer-perf job. Chunk 0 is the first-chunk cost of both
 # layer types; the later global chunks cover ring depth. Layer index does not change the cost of an
 # identical chunk, so one layer per type is enough.
-LAYER_PERF_CI_CELLS = {"global": (0, 1, 15, 31), "local": (0,)}
+LAYER_PERF_CI_CELLS = {"global": (0, 1, 15, 31), "local": (0, 1)}
 TRACE_REGION_SIZE = int(os.environ.get("GEMMA4_PREFILL_TRACE_REGION_SIZE", 256_000_000))
 
 

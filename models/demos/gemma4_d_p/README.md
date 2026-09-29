@@ -35,7 +35,7 @@ Both tests support chunk sizes 4096, 8192, 16384, and 32768. A CP-local chunk mu
 
 ### Layer perf in CI
 
-The **Blaze Models Prefill tests** workflow runs the `gemma4_d_p_layer_perf` stage with Tracy on a 14kW Galaxy. Dispatch it with `test-type=gemma4_d_p_layer_perf`; the regular nightly callers exclude this group. It measures `chunk_idx=ci`, which covers the cells in `LAYER_PERF_CI_CELLS`: the global layer at chunks 0, 1, 15, and 31, and the sliding layer at chunk 0, all at 256k@8k on 8×4. The job summary shows device-kernel time, span, and host time for each cell, plus each cell's top ops. The `layer-perf-*` artifact holds the raw `ops_perf_results_*.csv` and a `tt-perf-report` slice (CSV, stacked CSV/PNG, and log) for each cell.
+The **Blaze Models Prefill tests** workflow runs the `gemma4_d_p_layer_perf` stage with Tracy on a 14kW Galaxy. Dispatch it with `test-type=gemma4_d_p_layer_perf`; the regular nightly callers exclude this group. It measures `chunk_idx=ci`, which covers the cells in `LAYER_PERF_CI_CELLS`: the global layer at chunks 0, 1, 15, and 31, and the sliding layer at chunks 0 and 1, all at 256k@8k on 8×4. The job summary shows device-kernel time, span, and host time for each cell, plus the full operation table for each cell. Use `--top N` with the report script when a smaller table is preferred. The `layer-perf-*` artifact holds the raw `ops_perf_results_*.csv` and a `tt-perf-report` slice (CSV, stacked CSV/PNG, and log) for each cell.
 
 To reproduce it locally:
 

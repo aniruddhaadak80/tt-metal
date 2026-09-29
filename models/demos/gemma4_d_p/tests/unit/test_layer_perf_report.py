@@ -82,6 +82,44 @@ def test_summarize_skips_rows_without_device_time(tmp_path):
     assert summary["top_ops"] == [{"op": "MatmulDeviceOperation", "device_us": 500.0, "count": 2}]
 
 
+def test_summarize_lists_all_ops_by_default(tmp_path):
+    path = tmp_path / "cell.csv"
+    _write_cell_csv(
+        path,
+        [
+            ("MatmulDeviceOperation", "300.0", "5.0"),
+            ("RingJointSDPADeviceOperation", "500.0", "10.0"),
+            ("GatherCodegenDeviceOperation", "200.0", "2.0"),
+        ],
+    )
+
+    summary = lpr.summarize_cell_csv(path)
+
+    assert [op["op"] for op in summary["top_ops"]] == [
+        "RingJointSDPADeviceOperation",
+        "MatmulDeviceOperation",
+        "GatherCodegenDeviceOperation",
+    ]
+
+
+def test_run_tt_perf_report_rejects_unsafe_signposts(tmp_path, monkeypatch, expect_error):
+    called = False
+
+    def unexpected_run(*args, **kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(lpr.subprocess, "run", unexpected_run)
+    with expect_error(ValueError, "invalid start signpost"):
+        lpr.run_tt_perf_report(
+            tmp_path / "ops.csv",
+            "gemma4-layer-global-chunk0-start; touch /tmp/pwned",
+            "gemma4-layer-global-chunk0-stop",
+            tmp_path / "out.csv",
+        )
+    assert not called
+
+
 def test_main_slices_every_manifest_cell(tmp_path, monkeypatch):
     root = tmp_path / "summaries"
     monkeypatch.setenv("PREFILL_SUMMARIES", str(root))

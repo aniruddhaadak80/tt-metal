@@ -1148,7 +1148,7 @@
   sp_config: sc1
 
 # Op-level layer perf under Tracy: one global and one sliding layer, compiled and traced once each,
-# then replayed at the LAYER_PERF_CI_CELLS chunks (global 0/1/15/31, sliding 0) of 256k@8k.
+# then replayed at the LAYER_PERF_CI_CELLS chunks (global 0/1/15/31, sliding 0/1) of 256k@8k.
 # layer_perf_report.py slices the ops CSV per signpost pair with tt-perf-report and writes the
 # job-summary table. Selecting gemma4_d_p_layer_perf enables a Tracy build in the Blaze workflow; the
 # nightly Blaze callers exclude its group. Tracy writes to the worker's local generated/profiler
