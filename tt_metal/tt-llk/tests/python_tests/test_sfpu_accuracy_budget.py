@@ -734,10 +734,12 @@ def test_enrolled_ops_is_sorted_and_stable():
 #: whose per-format tolerances moved into the table, and six transcendentals whose
 #: *best* cell is already past its output's usable ceiling (6 bf16, 51 fp16, 25
 #: Bfp8_b): Erfc 376, Xielu 512, Polygamma 614, Softplus 6,416, Lgamma 32,295 and
-#: Digamma 33,840 steps. Lgamma's worst, 2.3e9, is issue #55356.
+#: Digamma 33,840 steps. Lgamma's worst, 2.3e9, is issue #55356. Tanhshrink joined them
+#: when the Float32 walk stopped landing only on bf16-exact values: its step budgets
+#: were all on Float32 inputs, and the corrected sample puts every one past the ceiling.
 #:
-#: Sign, Heaviside, GeluTanh, Tanhshrink and SfpuElwmul are not here: per variant, some
-#: of their cells are inside the ceiling, and the rest fall through to tolerance.
+#: Sign, Heaviside, GeluTanh, I1 and SfpuElwmul are not here: per variant, some of
+#: their cells are inside the ceiling, and the rest fall through to tolerance.
 ONLY_EVER_TOLERANCE = frozenset(
     {
         MathOperation.SigmoidAppx,
@@ -750,6 +752,7 @@ ONLY_EVER_TOLERANCE = frozenset(
         MathOperation.Softplus,
         MathOperation.Lgamma,
         MathOperation.Digamma,
+        MathOperation.Tanhshrink,
     }
 )
 
@@ -757,19 +760,12 @@ ONLY_EVER_TOLERANCE = frozenset(
 def test_every_enrolled_op_reaches_its_step_budget():
     """The sweep must reach the ULP branch for every enrolled op but the ones above.
 
-    The input-keyed ops are pinned separately: a sweep that left ``input_format`` unset
-    sent every one of them to ``TOLERANCE_CONTRACT`` while this still passed for the rest.
+    A sweep that left ``input_format`` unset sent every input-keyed op -- nearly the
+    whole table -- to ``TOLERANCE_CONTRACT``; they would show up in ``missing`` here.
     """
-    input_keyed = {
-        op
-        for op, table in _SFPU_ACCURACY_BUDGET.items()
-        if any(key.input_format is not None for key in table)
-    }
-    assert len(input_keyed) == 130, sorted(op.name for op in input_keyed)
     with_budget = {op for op, _, _, _ in _live_step_budgets()}
     missing = set(enrolled_ops()) - with_budget
     assert missing == ONLY_EVER_TOLERANCE, sorted(op.name for op in missing)
-    assert input_keyed - ONLY_EVER_TOLERANCE <= with_budget
 
 
 #: Ops exact by construction: a sign-bit change, a copy, or an integer-valued result.

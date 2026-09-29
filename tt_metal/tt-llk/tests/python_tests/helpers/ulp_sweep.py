@@ -9,9 +9,10 @@ measured that way describes the sample, not the format: approximate ``Reciprocal
 measures the second number.
 
 Exhaustive is only honest for the 16-bit formats. bfloat16 has 65,279 finite values and
-float16 63,487, so either fits one 64-tile device run; Float32's 2**32 does not, and is
-left to a stratified sweep. ``Bfp8_b`` is swept in bfloat16 and packed on the way in --
-it has no enumerable value set of its own.
+float16 63,487, so either fits one 64-tile device run; Float32's 2**32 does not, so it is
+walked with a stride that gives every binade an equal share. ``Bfp8_b`` and ``Bfp4_b``
+are swept in bfloat16 and packed on the way in -- neither has an enumerable value set of
+its own.
 """
 
 from __future__ import annotations
@@ -53,8 +54,12 @@ _STIMULI_FORMAT: Dict[DataFormat, DataFormat] = {
 #: Float32 has 2**32 values and one run holds 2**16, so it is the one input the sweep
 #: samples rather than enumerates. Striding the total order gives every binade an equal
 #: share (each holds the same number of values); a consecutive walk would cover a
-#: millionth of one binade.
-_FP32_STRIDE = 2**16
+#: millionth of one binade. Odd on purpose: the walk starts on a multiple of 2**16, so
+#: a stride of exactly 2**16 lands only on values whose low 16 mantissa bits are zero --
+#: the bfloat16 set, already swept as Float16_b -- and an fp32 path that reads those
+#: bits (a LUT index, a truncating convert) went untested. 2**16 + 1 keeps the count
+#: at 65,279 and walks the low bits through every value.
+_FP32_STRIDE = 2**16 + 1
 
 #: A top-level op key in the table.
 _OP_KEY = re.compile(r"^([A-Za-z_]\w*):")
@@ -168,7 +173,7 @@ def measurable_mask(
     own, so there is nothing per-op to look up.
 
     The sweep feeds every non-special value of the format, with no per-op domain
-    clipping -- an op is measured wherever its format can reach. Three lane kinds come
+    clipping -- an op is measured wherever its format can reach. Four lane kinds come
     back out, none of them a budget question:
 
     * either side NaN. :func:`ulp_distance` returns ``UNMEASURABLE`` there, and an op
@@ -517,9 +522,9 @@ def _collapse(decided: Dict[Tuple, Tuple]) -> List[dict]:
     """The decided cells as the fewest rows that reproduce them.
 
     Only ``approx`` and ``dest`` may be dropped. ``in`` and ``out`` stay pinned even
-    when every value agrees, because this sweep covers the 16-bit formats only: a row
-    that wildcards the output would, by most-specific-wins, also answer for Float32 and
-    the block floats below Bfp8_b, which nothing here measured. `Abs` losing its
+    when every value agrees, because the sweep drives a fixed set of formats: a row that
+    wildcards the output would, by most-specific-wins, also answer for the block floats
+    below Bfp8_b and for any format a driver adds later, which nothing here measured. `Abs` losing its
     Float32 row that way is what the registry's unswept-architecture guard caught.
     """
     axes = ("in", "out", "approx", "dest")
