@@ -463,7 +463,7 @@ def _verdict(measured: int, out_fmt: str) -> Tuple[str, int]:
     ``("ulp", budget)`` while a step budget is still *stronger* than the tolerance it
     replaces, and ``("tolerance", budget)`` once it is not -- the budget either way, so
     the row's comment can name the number that actually crossed the line. The bound is the table's
-    own ``usable_budget_ceiling``: 419,431 steps for fp32, 52 for fp16, 7 for bf16, 26
+    own ``usable_budget_ceiling``: 419,430 steps for fp32, 51 for fp16, 6 for bf16, 25
     for Bfp8_b. Decided per cell and before collapsing, because it depends on the output
     format and collapsing may drop it.
 
@@ -491,8 +491,8 @@ def _verdict(measured: int, out_fmt: str) -> Tuple[str, int]:
     ceiling = usable_budget_ceiling(DataFormat[out_fmt])
     if budget > ceiling:
         if measured <= ceiling:
-            # The kernel meets the gate and only the headroom does not (Exp measures 7
-            # on bf16, ceiling 7). Cap at the ceiling: still stronger than the tolerance
+            # The kernel meets the gate and only the headroom does not (a bf16 cell
+            # measuring 6, ceiling 6). Cap at the ceiling: still stronger than the tolerance
             # it replaces, with zero slack so any drift fails.
             return ("ulp", int(ceiling))
         # The budget crosses the line, not the measurement; the row names both.

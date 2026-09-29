@@ -144,9 +144,9 @@ class AccuracyContract:
         measured by the exhaustive sweep over every value the format has, so it is far
         wider than the few thousand values that driver samples warrant, and feeding it
         back would loosen its gate rather than tighten it. An op on the ULP metric
-        therefore keeps today's per-format tolerance here. The binary and ternary
-        drivers take :meth:`passed_test_kwargs`: their rows were measured over their own
-        sweeps.
+        therefore keeps today's per-format tolerance here. The binary, ternary and
+        scalar drivers take :meth:`passed_test_kwargs`: their rows were measured over
+        their own sweeps.
         """
         if self.metric is Metric.ULP:
             return {}
@@ -504,17 +504,18 @@ def usable_budget_ceiling(output_format: DataFormat) -> float:
     about 35%, before it. A bound that admits either is not a gate.
 
     The real bound is the ``rtol`` half of the ``isclose`` this replaces, itself a step
-    budget at large magnitude, rounded *up* to a whole step because a budget is one:
-    419,431 steps for fp32, 52 for fp16, 7 for bf16. So a bf16 cell measuring 7 enrols
-    at 7 -- 5.5% relative error at the top of a binade against the 5% rtol, and tighter
-    than the tolerance gate everywhere below it. ``passed_test`` warns on the same line
-    at runtime; no row here may cross it.
+    budget at large magnitude, rounded *down* to a whole step because a budget is one:
+    419,430 steps for fp32, 51 for fp16, 6 for bf16, 25 for Bfp8_b. Down, not up: a
+    step is widest relative to the value at the bottom of a binade, where bf16's 6.4
+    lets ``isclose`` accept ``128 -> 134`` and refuse ``128 -> 135``, so a 7-step budget
+    would pass what the tolerance it displaced rejected, with no PCC behind it.
+    ``passed_test`` warns past the unrounded figure at runtime; no row here may cross it.
     """
     from .utils import tolerances
 
     dtype = ulp_dtype(output_format)
     by_rtol = tolerances[output_format].rtol * (1 << MANTISSA_BITS_FOR_ULP[dtype])
-    return float(math.ceil(min(by_rtol, float(MAX_MEANINGFUL_ULP[dtype]))))
+    return float(math.floor(min(by_rtol, float(MAX_MEANINGFUL_ULP[dtype]))))
 
 
 def validate_registry() -> None:

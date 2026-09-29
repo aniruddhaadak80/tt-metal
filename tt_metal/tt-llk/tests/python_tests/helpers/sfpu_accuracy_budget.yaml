@@ -49,8 +49,8 @@
 #
 # Every cell the sweep drives is gated: a Float16_b/Float16/Bfp8_b/Bfp4_b input, or a
 # strided Float32 one, into a Float16_b/Float16/Float32 output. The unary functional
-# driver takes only the tolerance arm of a contract; the binary and ternary drivers gate
-# on the whole of it, because their rows were measured over their own sweeps.
+# driver takes only the tolerance arm of a contract; the binary, ternary and scalar
+# drivers gate on the whole of it, because their rows were measured over their own sweeps.
 #
 # ── Enrolled first: the ops exact by construction ──────────────────────────
 #
@@ -614,14 +614,14 @@ Ceil:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Float
 Celu:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Float32 sweep, wormhole, 2026-09-28, except where a row says otherwise
   - {in: Bfp4_b, out: Bfp8_b, dest: "No", metric: tolerance}  # max 385 ULP, block-quantized
   - {in: Bfp4_b, out: Bfp8_b, dest: "Yes", metric: tolerance}  # max 385 ULP, block-quantized
-  - {in: Bfp4_b, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
+  - {in: Bfp4_b, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
   - {in: Bfp4_b, out: Float16_b, dest: "No", max_ulp: 2}  # max 1 ULP
   - {in: Bfp4_b, out: Float16_b, dest: "Yes", max_ulp: 0}  # max 0 ULP
   - {in: Bfp4_b, out: Float32, dest: "No", max_ulp: 72090}  # max 65536 ULP
   - {in: Bfp4_b, out: Float32, dest: "Yes", max_ulp: 35998}  # max 32725 ULP
   - {in: Bfp8_b, out: Bfp8_b, dest: "No", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Bfp8_b, out: Bfp8_b, dest: "Yes", metric: tolerance}  # max 393 ULP, block-quantized
-  - {in: Bfp8_b, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
+  - {in: Bfp8_b, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
   - {in: Bfp8_b, out: Float16_b, dest: "No", max_ulp: 2}  # max 1 ULP
   - {in: Bfp8_b, out: Float16_b, dest: "Yes", max_ulp: 0}  # max 0 ULP
   - {in: Bfp8_b, out: Float32, dest: "No", max_ulp: 72090}  # max 65536 ULP
@@ -636,7 +636,7 @@ Celu:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Float
   - {in: Float16, out: Float32, dest: "Yes", max_ulp: 4506}  # max 4096 ULP
   - {in: Float16_b, out: Bfp8_b, dest: "No", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Float16_b, out: Bfp8_b, dest: "Yes", metric: tolerance}  # not measurable: 3 lane(s) non-finite against a finite golden (x=3.36295e+38: 3.36295e+38 -> inf; x=3.37624e+38: 3.37624e+38 -> inf; x=3.38953e+38: 3.38953e+38 -> inf)
-  - {in: Float16_b, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
+  - {in: Float16_b, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
   - {in: Float16_b, out: Float16_b, dest: "No", max_ulp: 0}  # max 0 ULP
   - {in: Float16_b, out: Float16_b, dest: "Yes", max_ulp: 0}  # max 0 ULP
   - {in: Float16_b, out: Float32, dest: "No", max_ulp: 0}  # max 0 ULP
@@ -644,7 +644,7 @@ Celu:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Float
   - {in: Float32, out: Bfp8_b, dest: "No", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Float32, out: Bfp8_b, dest: "Yes", metric: tolerance}  # not measurable: 3 lane(s) non-finite against a finite golden (x=3.36295e+38: 3.36295e+38 -> inf; x=3.37624e+38: 3.37624e+38 -> inf; x=3.38953e+38: 3.38953e+38 -> inf)
   - {in: Float32, out: Float16, dest: "No", max_ulp: 5}  # max 4 ULP
-  - {in: Float32, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
+  - {in: Float32, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
   - {in: Float32, out: Float16_b, dest: "No", max_ulp: 0}  # max 0 ULP
   - {in: Float32, out: Float16_b, dest: "Yes", max_ulp: 0}  # max 0 ULP
   - {in: Float32, out: Float32, dest: "No", max_ulp: 0}  # max 0 ULP
@@ -838,14 +838,14 @@ Digamma:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Fl
 Elu:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Float32 sweep, wormhole, 2026-09-28, except where a row says otherwise
   - {in: Bfp4_b, out: Bfp8_b, dest: "No", metric: tolerance}  # max 385 ULP, block-quantized
   - {in: Bfp4_b, out: Bfp8_b, dest: "Yes", metric: tolerance}  # max 385 ULP, block-quantized
-  - {in: Bfp4_b, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
+  - {in: Bfp4_b, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
   - {in: Bfp4_b, out: Float16_b, dest: "No", max_ulp: 2}  # max 1 ULP
   - {in: Bfp4_b, out: Float16_b, dest: "Yes", max_ulp: 0}  # max 0 ULP
   - {in: Bfp4_b, out: Float32, dest: "No", max_ulp: 72090}  # max 65536 ULP
   - {in: Bfp4_b, out: Float32, dest: "Yes", max_ulp: 35998}  # max 32725 ULP
   - {in: Bfp8_b, out: Bfp8_b, dest: "No", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Bfp8_b, out: Bfp8_b, dest: "Yes", metric: tolerance}  # max 393 ULP, block-quantized
-  - {in: Bfp8_b, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
+  - {in: Bfp8_b, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
   - {in: Bfp8_b, out: Float16_b, dest: "No", max_ulp: 2}  # max 1 ULP
   - {in: Bfp8_b, out: Float16_b, dest: "Yes", max_ulp: 0}  # max 0 ULP
   - {in: Bfp8_b, out: Float32, dest: "No", max_ulp: 72090}  # max 65536 ULP
@@ -860,7 +860,7 @@ Elu:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Float3
   - {in: Float16, out: Float32, dest: "Yes", max_ulp: 4506}  # max 4096 ULP
   - {in: Float16_b, out: Bfp8_b, dest: "No", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Float16_b, out: Bfp8_b, dest: "Yes", metric: tolerance}  # not measurable: 3 lane(s) non-finite against a finite golden (x=3.36295e+38: 3.36295e+38 -> inf; x=3.37624e+38: 3.37624e+38 -> inf; x=3.38953e+38: 3.38953e+38 -> inf)
-  - {in: Float16_b, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
+  - {in: Float16_b, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
   - {in: Float16_b, out: Float16_b, dest: "No", max_ulp: 0}  # max 0 ULP
   - {in: Float16_b, out: Float16_b, dest: "Yes", max_ulp: 0}  # max 0 ULP
   - {in: Float16_b, out: Float32, dest: "No", max_ulp: 0}  # max 0 ULP
@@ -868,7 +868,7 @@ Elu:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Float3
   - {in: Float32, out: Bfp8_b, dest: "No", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Float32, out: Bfp8_b, dest: "Yes", metric: tolerance}  # not measurable: 3 lane(s) non-finite against a finite golden (x=3.36295e+38: 3.36295e+38 -> inf; x=3.37624e+38: 3.37624e+38 -> inf; x=3.38953e+38: 3.38953e+38 -> inf)
   - {in: Float32, out: Float16, dest: "No", max_ulp: 5}  # max 4 ULP
-  - {in: Float32, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
+  - {in: Float32, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
   - {in: Float32, out: Float16_b, dest: "No", max_ulp: 0}  # max 0 ULP
   - {in: Float32, out: Float16_b, dest: "Yes", max_ulp: 0}  # max 0 ULP
   - {in: Float32, out: Float32, dest: "No", max_ulp: 0}  # max 0 ULP
@@ -1096,80 +1096,80 @@ Erfinv:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Flo
 
 
 
-Exp:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Float32 sweep, wormhole, 2026-09-25, except where a row says otherwise
+Exp:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Float32 sweep, wormhole, 2026-09-29, except where a row says otherwise
   - {in: Bfp4_b, out: Bfp8_b, approx: "No", dest: "No", metric: tolerance}  # max 27938 ULP, block-quantized
   - {in: Bfp4_b, out: Bfp8_b, approx: "No", dest: "Yes", metric: tolerance}  # max 27938 ULP, block-quantized
   - {in: Bfp4_b, out: Bfp8_b, approx: "Yes", dest: "No", metric: tolerance}  # max 27938 ULP, block-quantized
   - {in: Bfp4_b, out: Bfp8_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 27938 ULP, block-quantized
-  - {in: Bfp4_b, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 261 ULP, budget 288 > ceiling 52
-  - {in: Bfp4_b, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 216 ULP, budget 238 > ceiling 52
+  - {in: Bfp4_b, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 261 ULP, budget 288 > ceiling 51
+  - {in: Bfp4_b, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 216 ULP, budget 238 > ceiling 51
   - {in: Bfp4_b, out: Float16_b, approx: "No", dest: "No", max_ulp: 3}  # max 2 ULP
   - {in: Bfp4_b, out: Float16_b, approx: "No", dest: "Yes", max_ulp: 0}  # max 0 ULP
-  - {in: Bfp4_b, out: Float16_b, approx: "Yes", dest: "No", max_ulp: 7}  # max 6 ULP
-  - {in: Bfp4_b, out: Float16_b, approx: "Yes", dest: "Yes", max_ulp: 7}  # max 6 ULP
+  - {in: Bfp4_b, out: Float16_b, approx: "Yes", dest: "No", max_ulp: 6}  # max 6 ULP
+  - {in: Bfp4_b, out: Float16_b, approx: "Yes", dest: "Yes", max_ulp: 6}  # max 6 ULP
   - {in: Bfp4_b, out: Float32, approx: "No", dest: "No", max_ulp: 144180}  # max 131072 ULP
   - {in: Bfp4_b, out: Float32, approx: "No", dest: "Yes", max_ulp: 36010}  # max 32736 ULP
-  - {in: Bfp4_b, out: Float32, approx: "Yes", dest: "No", max_ulp: 419431}  # max 393216 ULP
-  - {in: Bfp4_b, out: Float32, approx: "Yes", dest: "Yes", max_ulp: 419431}  # max 393216 ULP
+  - {in: Bfp4_b, out: Float32, approx: "Yes", dest: "No", max_ulp: 419430}  # max 393216 ULP
+  - {in: Bfp4_b, out: Float32, approx: "Yes", dest: "Yes", max_ulp: 419430}  # max 393216 ULP
   - {in: Bfp8_b, out: Bfp8_b, approx: "No", dest: "No", metric: tolerance}  # max 32377 ULP, block-quantized
   - {in: Bfp8_b, out: Bfp8_b, approx: "No", dest: "Yes", metric: tolerance}  # max 32377 ULP, block-quantized
   - {in: Bfp8_b, out: Bfp8_b, approx: "Yes", dest: "No", metric: tolerance}  # max 32377 ULP, block-quantized
   - {in: Bfp8_b, out: Bfp8_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 32377 ULP, block-quantized
-  - {in: Bfp8_b, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 502 ULP, budget 553 > ceiling 52
-  - {in: Bfp8_b, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 524 ULP, budget 577 > ceiling 52
+  - {in: Bfp8_b, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 502 ULP, budget 553 > ceiling 51
+  - {in: Bfp8_b, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 524 ULP, budget 577 > ceiling 51
   - {in: Bfp8_b, out: Float16_b, approx: "No", dest: "No", max_ulp: 3}  # max 2 ULP
   - {in: Bfp8_b, out: Float16_b, approx: "No", dest: "Yes", max_ulp: 0}  # max 0 ULP
-  - {in: Bfp8_b, out: Float16_b, approx: "Yes", dest: "No", max_ulp: 7}  # max 7 ULP
-  - {in: Bfp8_b, out: Float16_b, approx: "Yes", dest: "Yes", max_ulp: 7}  # max 6 ULP
+  - {in: Bfp8_b, out: Float16_b, approx: "Yes", dest: "No", metric: tolerance}  # max 7 ULP, budget 8 > ceiling 6
+  - {in: Bfp8_b, out: Float16_b, approx: "Yes", dest: "Yes", max_ulp: 6}  # max 6 ULP
   - {in: Bfp8_b, out: Float32, approx: "No", dest: "No", max_ulp: 144180}  # max 131072 ULP
   - {in: Bfp8_b, out: Float32, approx: "No", dest: "Yes", max_ulp: 36044}  # max 32767 ULP
-  - {in: Bfp8_b, out: Float32, approx: "Yes", dest: "No", metric: tolerance}  # max 458752 ULP, budget 504628 > ceiling 419431
-  - {in: Bfp8_b, out: Float32, approx: "Yes", dest: "Yes", max_ulp: 419431}  # max 393216 ULP
+  - {in: Bfp8_b, out: Float32, approx: "Yes", dest: "No", metric: tolerance}  # max 458752 ULP, budget 504628 > ceiling 419430
+  - {in: Bfp8_b, out: Float32, approx: "Yes", dest: "Yes", max_ulp: 419430}  # max 393216 ULP
   - {in: Float16, out: Bfp8_b, approx: "No", dest: "No", metric: tolerance}  # max 18177 ULP, block-quantized
   - {in: Float16, out: Bfp8_b, approx: "No", dest: "Yes", metric: tolerance}  # max 18177 ULP, block-quantized
   - {in: Float16, out: Bfp8_b, approx: "Yes", dest: "No", metric: tolerance}  # max 18173 ULP, block-quantized
   - {in: Float16, out: Bfp8_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 18173 ULP, block-quantized
   - {in: Float16, out: Float16, approx: "No", dest: "No", max_ulp: 8}  # max 7 ULP
-  - {in: Float16, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 511 ULP, budget 563 > ceiling 52
-  - {in: Float16, out: Float16, approx: "Yes", dest: "No", metric: tolerance}  # max 1049 ULP, budget 1154 > ceiling 52
-  - {in: Float16, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 528 ULP, budget 581 > ceiling 52
-  - {in: Float16, out: Float16_b, approx: "No", dest: "No", metric: tolerance}  # max 126 ULP, budget 139 > ceiling 7
-  - {in: Float16, out: Float16_b, approx: "No", dest: "Yes", metric: tolerance}  # max 12925 ULP, budget 14218 > ceiling 7
-  - {in: Float16, out: Float16_b, approx: "Yes", dest: "No", metric: tolerance}  # max 14340 ULP, budget 15775 > ceiling 7
-  - {in: Float16, out: Float16_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 12921 ULP, budget 14214 > ceiling 7
-  - {in: Float16, out: Float32, approx: "No", dest: "No", metric: tolerance}  # max 8314880 ULP, budget 9146368 > ceiling 419431
-  - {in: Float16, out: Float32, approx: "No", dest: "Yes", metric: tolerance}  # max 846998464 ULP, budget 931698311 > ceiling 419431
-  - {in: Float16, out: Float32, approx: "Yes", dest: "No", metric: tolerance}  # max 939728897 ULP, budget 1033701787 > ceiling 419431
-  - {in: Float16, out: Float32, approx: "Yes", dest: "Yes", metric: tolerance}  # max 846692353 ULP, budget 931361589 > ceiling 419431
+  - {in: Float16, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 511 ULP, budget 563 > ceiling 51
+  - {in: Float16, out: Float16, approx: "Yes", dest: "No", metric: tolerance}  # max 1049 ULP, budget 1154 > ceiling 51
+  - {in: Float16, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 528 ULP, budget 581 > ceiling 51
+  - {in: Float16, out: Float16_b, approx: "No", dest: "No", metric: tolerance}  # max 126 ULP, budget 139 > ceiling 6
+  - {in: Float16, out: Float16_b, approx: "No", dest: "Yes", metric: tolerance}  # max 12925 ULP, budget 14218 > ceiling 6
+  - {in: Float16, out: Float16_b, approx: "Yes", dest: "No", metric: tolerance}  # max 14340 ULP, budget 15775 > ceiling 6
+  - {in: Float16, out: Float16_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 12921 ULP, budget 14214 > ceiling 6
+  - {in: Float16, out: Float32, approx: "No", dest: "No", metric: tolerance}  # max 8314880 ULP, budget 9146368 > ceiling 419430
+  - {in: Float16, out: Float32, approx: "No", dest: "Yes", metric: tolerance}  # max 846998464 ULP, budget 931698311 > ceiling 419430
+  - {in: Float16, out: Float32, approx: "Yes", dest: "No", metric: tolerance}  # max 939728897 ULP, budget 1033701787 > ceiling 419430
+  - {in: Float16, out: Float32, approx: "Yes", dest: "Yes", metric: tolerance}  # max 846692353 ULP, budget 931361589 > ceiling 419430
   - {in: Float16_b, out: Bfp8_b, approx: "No", dest: "No", metric: tolerance}  # max 32461 ULP, block-quantized
   - {in: Float16_b, out: Bfp8_b, approx: "No", dest: "Yes", metric: tolerance}  # max 32461 ULP, block-quantized
   - {in: Float16_b, out: Bfp8_b, approx: "Yes", dest: "No", metric: tolerance}  # max 32465 ULP, block-quantized
   - {in: Float16_b, out: Bfp8_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 32469 ULP, block-quantized
-  - {in: Float16_b, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 502 ULP, budget 553 > ceiling 52
-  - {in: Float16_b, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 524 ULP, budget 577 > ceiling 52
+  - {in: Float16_b, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 502 ULP, budget 553 > ceiling 51
+  - {in: Float16_b, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 524 ULP, budget 577 > ceiling 51
   - {in: Float16_b, out: Float16_b, approx: "No", dest: "No", max_ulp: 2}  # max 1 ULP
   - {in: Float16_b, out: Float16_b, approx: "No", dest: "Yes", max_ulp: 0}  # max 0 ULP
-  - {in: Float16_b, out: Float16_b, approx: "Yes", dest: "No", max_ulp: 7}  # max 6 ULP
-  - {in: Float16_b, out: Float16_b, approx: "Yes", dest: "Yes", max_ulp: 7}  # max 6 ULP
+  - {in: Float16_b, out: Float16_b, approx: "Yes", dest: "No", max_ulp: 6}  # max 6 ULP
+  - {in: Float16_b, out: Float16_b, approx: "Yes", dest: "Yes", max_ulp: 6}  # max 6 ULP
   - {in: Float16_b, out: Float32, approx: "No", dest: "No", max_ulp: 72090}  # max 65536 ULP
   - {in: Float16_b, out: Float32, approx: "No", dest: "Yes", max_ulp: 36044}  # max 32767 ULP
-  - {in: Float16_b, out: Float32, approx: "Yes", dest: "No", max_ulp: 419431}  # max 393216 ULP
-  - {in: Float16_b, out: Float32, approx: "Yes", dest: "Yes", max_ulp: 419431}  # max 393216 ULP
+  - {in: Float16_b, out: Float32, approx: "Yes", dest: "No", max_ulp: 419430}  # max 393216 ULP
+  - {in: Float16_b, out: Float32, approx: "Yes", dest: "Yes", max_ulp: 419430}  # max 393216 ULP
   - {in: Float32, out: Bfp8_b, approx: "No", dest: "No", metric: tolerance}  # max 32461 ULP, block-quantized
   - {in: Float32, out: Bfp8_b, approx: "No", dest: "Yes", metric: tolerance}  # max 32461 ULP, block-quantized
   - {in: Float32, out: Bfp8_b, approx: "Yes", dest: "No", metric: tolerance}  # max 32465 ULP, block-quantized
   - {in: Float32, out: Bfp8_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 32469 ULP, block-quantized
   - {in: Float32, out: Float16, approx: "No", dest: "No", max_ulp: 8}  # max 7 ULP
-  - {in: Float32, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 501 ULP, budget 552 > ceiling 52
-  - {in: Float32, out: Float16, approx: "Yes", dest: "No", metric: tolerance}  # max 1041 ULP, budget 1146 > ceiling 52
-  - {in: Float32, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 523 ULP, budget 576 > ceiling 52
+  - {in: Float32, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 501 ULP, budget 552 > ceiling 51
+  - {in: Float32, out: Float16, approx: "Yes", dest: "No", metric: tolerance}  # max 1041 ULP, budget 1146 > ceiling 51
+  - {in: Float32, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 523 ULP, budget 576 > ceiling 51
   - {in: Float32, out: Float16_b, approx: "No", dest: "No", max_ulp: 2}  # max 1 ULP
   - {in: Float32, out: Float16_b, approx: "No", dest: "Yes", max_ulp: 0}  # max 0 ULP
-  - {in: Float32, out: Float16_b, approx: "Yes", dest: "No", max_ulp: 7}  # max 6 ULP
-  - {in: Float32, out: Float16_b, approx: "Yes", dest: "Yes", max_ulp: 7}  # max 6 ULP
+  - {in: Float32, out: Float16_b, approx: "Yes", dest: "No", max_ulp: 6}  # max 6 ULP
+  - {in: Float32, out: Float16_b, approx: "Yes", dest: "Yes", max_ulp: 6}  # max 6 ULP
   - {in: Float32, out: Float32, approx: "No", dest: "No", max_ulp: 72090}  # max 65536 ULP
   - {in: Float32, out: Float32, approx: "No", dest: "Yes", max_ulp: 2}  # max 1 ULP
-  - {in: Float32, out: Float32, approx: "Yes", dest: "No", max_ulp: 419431}  # max 393216 ULP
+  - {in: Float32, out: Float32, approx: "Yes", dest: "No", max_ulp: 419430}  # max 393216 ULP
   - {in: Float32, out: Float32, approx: "Yes", dest: "Yes", max_ulp: 416564}  # max 378694 ULP
 
 
@@ -1376,14 +1376,14 @@ Expm1:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Floa
 Expm1Cw:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Float32 sweep, wormhole, 2026-09-28, except where a row says otherwise
   - {in: Bfp4_b, out: Bfp8_b, dest: "No", metric: tolerance}  # max 30891 ULP, block-quantized
   - {in: Bfp4_b, out: Bfp8_b, dest: "Yes", metric: tolerance}  # max 30891 ULP, block-quantized
-  - {in: Bfp4_b, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
+  - {in: Bfp4_b, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
   - {in: Bfp4_b, out: Float16_b, dest: "No", max_ulp: 2}  # max 1 ULP
   - {in: Bfp4_b, out: Float16_b, dest: "Yes", max_ulp: 0}  # max 0 ULP
   - {in: Bfp4_b, out: Float32, dest: "No", max_ulp: 72090}  # max 65536 ULP
   - {in: Bfp4_b, out: Float32, dest: "Yes", max_ulp: 36001}  # max 32728 ULP
   - {in: Bfp8_b, out: Bfp8_b, dest: "No", metric: tolerance}  # max 32377 ULP, block-quantized
   - {in: Bfp8_b, out: Bfp8_b, dest: "Yes", metric: tolerance}  # max 32377 ULP, block-quantized
-  - {in: Bfp8_b, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
+  - {in: Bfp8_b, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
   - {in: Bfp8_b, out: Float16_b, dest: "No", max_ulp: 2}  # max 1 ULP
   - {in: Bfp8_b, out: Float16_b, dest: "Yes", max_ulp: 0}  # max 0 ULP
   - {in: Bfp8_b, out: Float32, dest: "No", max_ulp: 72090}  # max 65536 ULP
@@ -1392,13 +1392,13 @@ Expm1Cw:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Fl
   - {in: Float16, out: Bfp8_b, dest: "Yes", metric: tolerance}  # max 18177 ULP, block-quantized
   - {in: Float16, out: Float16, dest: "No", max_ulp: 2}  # max 1 ULP
   - {in: Float16, out: Float16, dest: "Yes", max_ulp: 2}  # max 1 ULP
-  - {in: Float16, out: Float16_b, dest: "No", metric: tolerance}  # max 36608 ULP, budget 40269 > ceiling 7
+  - {in: Float16, out: Float16_b, dest: "No", metric: tolerance}  # max 36608 ULP, budget 40269 > ceiling 6
   - {in: Float16, out: Float16_b, dest: "Yes", max_ulp: 2}  # max 1 ULP
-  - {in: Float16, out: Float32, dest: "No", metric: tolerance}  # max 2399125506 ULP, budget 2639038057 > ceiling 419431
+  - {in: Float16, out: Float32, dest: "No", metric: tolerance}  # max 2399125506 ULP, budget 2639038057 > ceiling 419430
   - {in: Float16, out: Float32, dest: "Yes", max_ulp: 4508}  # max 4098 ULP
   - {in: Float16_b, out: Bfp8_b, dest: "No", metric: tolerance}  # not measurable: 1 lane(s) non-finite against a finite golden (x=88.5: 0 -> -inf)
   - {in: Float16_b, out: Bfp8_b, dest: "Yes", metric: tolerance}  # not measurable: 1 lane(s) non-finite against a finite golden (x=88.5: 0 -> -inf)
-  - {in: Float16_b, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
+  - {in: Float16_b, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
   - {in: Float16_b, out: Float16_b, dest: "No", metric: tolerance}  # not measurable: 1 lane(s) non-finite against a finite golden (x=88.5: 2.72492e+38 -> -inf)
   - {in: Float16_b, out: Float16_b, dest: "Yes", metric: tolerance}  # not measurable: 1 lane(s) non-finite against a finite golden (x=88.5: 2.72492e+38 -> -inf)
   - {in: Float16_b, out: Float32, dest: "No", metric: tolerance}  # not measurable: 1 lane(s) non-finite against a finite golden (x=88.5: 2.72492e+38 -> -inf)
@@ -1406,7 +1406,7 @@ Expm1Cw:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Fl
   - {in: Float32, out: Bfp8_b, dest: "No", metric: tolerance}  # not measurable: 1 lane(s) non-finite against a finite golden (x=88.5: 0 -> -inf)
   - {in: Float32, out: Bfp8_b, dest: "Yes", metric: tolerance}  # not measurable: 1 lane(s) non-finite against a finite golden (x=88.5: 0 -> -inf)
   - {in: Float32, out: Float16, dest: "No", max_ulp: 2}  # max 1 ULP
-  - {in: Float32, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
+  - {in: Float32, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
   - {in: Float32, out: Float16_b, dest: "No", metric: tolerance}  # not measurable: 1 lane(s) non-finite against a finite golden (x=88.5: 2.72492e+38 -> -inf)
   - {in: Float32, out: Float16_b, dest: "Yes", metric: tolerance}  # not measurable: 1 lane(s) non-finite against a finite golden (x=88.5: 2.72492e+38 -> -inf)
   - {in: Float32, out: Float32, dest: "No", metric: tolerance}  # not measurable: 1 lane(s) non-finite against a finite golden (x=88.5: 2.72492e+38 -> -inf)
@@ -3022,76 +3022,76 @@ Rdiv:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Float
   - {in: Bfp4_b, out: Bfp8_b, approx: "No", dest: "Yes", metric: tolerance}  # max 385 ULP, block-quantized
   - {in: Bfp4_b, out: Bfp8_b, approx: "Yes", dest: "No", metric: tolerance}  # max 385 ULP, block-quantized
   - {in: Bfp4_b, out: Bfp8_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 385 ULP, block-quantized
-  - {in: Bfp4_b, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
-  - {in: Bfp4_b, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
-  - {in: Bfp4_b, out: Float16_b, approx: "No", dest: "No", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 7
-  - {in: Bfp4_b, out: Float16_b, approx: "No", dest: "Yes", metric: tolerance}  # max 78 ULP, budget 86 > ceiling 7
-  - {in: Bfp4_b, out: Float16_b, approx: "Yes", dest: "No", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 7
-  - {in: Bfp4_b, out: Float16_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 7
-  - {in: Bfp4_b, out: Float32, approx: "No", dest: "No", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419431
-  - {in: Bfp4_b, out: Float32, approx: "No", dest: "Yes", metric: tolerance}  # max 5046273 ULP, budget 5550901 > ceiling 419431
-  - {in: Bfp4_b, out: Float32, approx: "Yes", dest: "No", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419431
-  - {in: Bfp4_b, out: Float32, approx: "Yes", dest: "Yes", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419431
+  - {in: Bfp4_b, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
+  - {in: Bfp4_b, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
+  - {in: Bfp4_b, out: Float16_b, approx: "No", dest: "No", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 6
+  - {in: Bfp4_b, out: Float16_b, approx: "No", dest: "Yes", metric: tolerance}  # max 78 ULP, budget 86 > ceiling 6
+  - {in: Bfp4_b, out: Float16_b, approx: "Yes", dest: "No", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 6
+  - {in: Bfp4_b, out: Float16_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 6
+  - {in: Bfp4_b, out: Float32, approx: "No", dest: "No", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419430
+  - {in: Bfp4_b, out: Float32, approx: "No", dest: "Yes", metric: tolerance}  # max 5046273 ULP, budget 5550901 > ceiling 419430
+  - {in: Bfp4_b, out: Float32, approx: "Yes", dest: "No", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419430
+  - {in: Bfp4_b, out: Float32, approx: "Yes", dest: "Yes", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419430
   - {in: Bfp8_b, out: Bfp8_b, approx: "No", dest: "No", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Bfp8_b, out: Bfp8_b, approx: "No", dest: "Yes", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Bfp8_b, out: Bfp8_b, approx: "Yes", dest: "No", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Bfp8_b, out: Bfp8_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 393 ULP, block-quantized
-  - {in: Bfp8_b, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
-  - {in: Bfp8_b, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
-  - {in: Bfp8_b, out: Float16_b, approx: "No", dest: "No", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 7
-  - {in: Bfp8_b, out: Float16_b, approx: "No", dest: "Yes", metric: tolerance}  # max 125 ULP, budget 138 > ceiling 7
-  - {in: Bfp8_b, out: Float16_b, approx: "Yes", dest: "No", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 7
-  - {in: Bfp8_b, out: Float16_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 7
-  - {in: Bfp8_b, out: Float32, approx: "No", dest: "No", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419431
-  - {in: Bfp8_b, out: Float32, approx: "No", dest: "Yes", metric: tolerance}  # max 8126465 ULP, budget 8939112 > ceiling 419431
-  - {in: Bfp8_b, out: Float32, approx: "Yes", dest: "No", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419431
-  - {in: Bfp8_b, out: Float32, approx: "Yes", dest: "Yes", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419431
+  - {in: Bfp8_b, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
+  - {in: Bfp8_b, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
+  - {in: Bfp8_b, out: Float16_b, approx: "No", dest: "No", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 6
+  - {in: Bfp8_b, out: Float16_b, approx: "No", dest: "Yes", metric: tolerance}  # max 125 ULP, budget 138 > ceiling 6
+  - {in: Bfp8_b, out: Float16_b, approx: "Yes", dest: "No", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 6
+  - {in: Bfp8_b, out: Float16_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 6
+  - {in: Bfp8_b, out: Float32, approx: "No", dest: "No", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419430
+  - {in: Bfp8_b, out: Float32, approx: "No", dest: "Yes", metric: tolerance}  # max 8126465 ULP, budget 8939112 > ceiling 419430
+  - {in: Bfp8_b, out: Float32, approx: "Yes", dest: "No", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419430
+  - {in: Bfp8_b, out: Float32, approx: "Yes", dest: "Yes", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419430
   - {in: Float16, out: Bfp8_b, approx: "No", dest: "No", metric: tolerance}  # max 14337 ULP, block-quantized
   - {in: Float16, out: Bfp8_b, approx: "No", dest: "Yes", metric: tolerance}  # max 18049 ULP, block-quantized
   - {in: Float16, out: Bfp8_b, approx: "Yes", dest: "No", metric: tolerance}  # max 14337 ULP, block-quantized
   - {in: Float16, out: Bfp8_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 18049 ULP, block-quantized
-  - {in: Float16, out: Float16, approx: "No", dest: "No", metric: tolerance}  # max 1024 ULP, budget 1127 > ceiling 52
-  - {in: Float16, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
-  - {in: Float16, out: Float16, approx: "Yes", dest: "No", metric: tolerance}  # max 1024 ULP, budget 1127 > ceiling 52
-  - {in: Float16, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 513 ULP, budget 565 > ceiling 52
-  - {in: Float16, out: Float16_b, approx: "No", dest: "No", metric: tolerance}  # max 14337 ULP, budget 15771 > ceiling 7
+  - {in: Float16, out: Float16, approx: "No", dest: "No", metric: tolerance}  # max 1024 ULP, budget 1127 > ceiling 51
+  - {in: Float16, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
+  - {in: Float16, out: Float16, approx: "Yes", dest: "No", metric: tolerance}  # max 1024 ULP, budget 1127 > ceiling 51
+  - {in: Float16, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 513 ULP, budget 565 > ceiling 51
+  - {in: Float16, out: Float16_b, approx: "No", dest: "No", metric: tolerance}  # max 14337 ULP, budget 15771 > ceiling 6
   - {in: Float16, out: Float16_b, approx: "No", dest: "Yes", max_ulp: 2}  # max 1 ULP
-  - {in: Float16, out: Float16_b, approx: "Yes", dest: "No", metric: tolerance}  # max 14337 ULP, budget 15771 > ceiling 7
+  - {in: Float16, out: Float16_b, approx: "Yes", dest: "No", metric: tolerance}  # max 14337 ULP, budget 15771 > ceiling 6
   - {in: Float16, out: Float16_b, approx: "Yes", dest: "Yes", max_ulp: 2}  # max 1 ULP
-  - {in: Float16, out: Float32, approx: "No", dest: "No", metric: tolerance}  # max 939524097 ULP, budget 1033476507 > ceiling 419431
+  - {in: Float16, out: Float32, approx: "No", dest: "No", metric: tolerance}  # max 939524097 ULP, budget 1033476507 > ceiling 419430
   - {in: Float16, out: Float32, approx: "No", dest: "Yes", max_ulp: 9003}  # max 8184 ULP
-  - {in: Float16, out: Float32, approx: "Yes", dest: "No", metric: tolerance}  # max 939524097 ULP, budget 1033476507 > ceiling 419431
+  - {in: Float16, out: Float32, approx: "Yes", dest: "No", metric: tolerance}  # max 939524097 ULP, budget 1033476507 > ceiling 419430
   - {in: Float16, out: Float32, approx: "Yes", dest: "Yes", max_ulp: 10379}  # max 9435 ULP
   - {in: Float16_b, out: Bfp8_b, approx: "No", dest: "No", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Float16_b, out: Bfp8_b, approx: "No", dest: "Yes", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Float16_b, out: Bfp8_b, approx: "Yes", dest: "No", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Float16_b, out: Bfp8_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 393 ULP, block-quantized
-  - {in: Float16_b, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
-  - {in: Float16_b, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 513 ULP, budget 565 > ceiling 52
-  - {in: Float16_b, out: Float16_b, approx: "No", dest: "No", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 7
-  - {in: Float16_b, out: Float16_b, approx: "No", dest: "Yes", metric: tolerance}  # max 127 ULP, budget 140 > ceiling 7
-  - {in: Float16_b, out: Float16_b, approx: "Yes", dest: "No", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 7
-  - {in: Float16_b, out: Float16_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 7
-  - {in: Float16_b, out: Float32, approx: "No", dest: "No", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419431
-  - {in: Float16_b, out: Float32, approx: "No", dest: "Yes", metric: tolerance}  # max 8257537 ULP, budget 9083291 > ceiling 419431
-  - {in: Float16_b, out: Float32, approx: "Yes", dest: "No", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419431
-  - {in: Float16_b, out: Float32, approx: "Yes", dest: "Yes", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419431
+  - {in: Float16_b, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
+  - {in: Float16_b, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 513 ULP, budget 565 > ceiling 51
+  - {in: Float16_b, out: Float16_b, approx: "No", dest: "No", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 6
+  - {in: Float16_b, out: Float16_b, approx: "No", dest: "Yes", metric: tolerance}  # max 127 ULP, budget 140 > ceiling 6
+  - {in: Float16_b, out: Float16_b, approx: "Yes", dest: "No", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 6
+  - {in: Float16_b, out: Float16_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 6
+  - {in: Float16_b, out: Float32, approx: "No", dest: "No", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419430
+  - {in: Float16_b, out: Float32, approx: "No", dest: "Yes", metric: tolerance}  # max 8257537 ULP, budget 9083291 > ceiling 419430
+  - {in: Float16_b, out: Float32, approx: "Yes", dest: "No", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419430
+  - {in: Float16_b, out: Float32, approx: "Yes", dest: "Yes", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419430
   - {in: Float32, out: Bfp8_b, approx: "No", dest: "No", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Float32, out: Bfp8_b, approx: "No", dest: "Yes", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Float32, out: Bfp8_b, approx: "Yes", dest: "No", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Float32, out: Bfp8_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Float32, out: Float16, approx: "No", dest: "No", metric: tolerance}  # not measurable: 254 lane(s) non-finite against a finite golden (x=-6.07967e-05: -32896 -> nan; x=-6.05583e-05: -33024 -> nan; x=-6.03199e-05: -33152 -> nan; x=-6.00815e-05: -33280 -> nan)
-  - {in: Float32, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
+  - {in: Float32, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
   - {in: Float32, out: Float16, approx: "Yes", dest: "No", metric: tolerance}  # not measurable: 254 lane(s) non-finite against a finite golden (x=-6.07967e-05: -32896 -> nan; x=-6.05583e-05: -33024 -> nan; x=-6.03199e-05: -33152 -> nan; x=-6.00815e-05: -33280 -> nan)
-  - {in: Float32, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
-  - {in: Float32, out: Float16_b, approx: "No", dest: "No", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 7
-  - {in: Float32, out: Float16_b, approx: "No", dest: "Yes", metric: tolerance}  # max 127 ULP, budget 140 > ceiling 7
-  - {in: Float32, out: Float16_b, approx: "Yes", dest: "No", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 7
-  - {in: Float32, out: Float16_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 7
-  - {in: Float32, out: Float32, approx: "No", dest: "No", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419431
-  - {in: Float32, out: Float32, approx: "No", dest: "Yes", metric: tolerance}  # max 8258553 ULP, budget 9084409 > ceiling 419431
-  - {in: Float32, out: Float32, approx: "Yes", dest: "No", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419431
-  - {in: Float32, out: Float32, approx: "Yes", dest: "Yes", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419431
+  - {in: Float32, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
+  - {in: Float32, out: Float16_b, approx: "No", dest: "No", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 6
+  - {in: Float32, out: Float16_b, approx: "No", dest: "Yes", metric: tolerance}  # max 127 ULP, budget 140 > ceiling 6
+  - {in: Float32, out: Float16_b, approx: "Yes", dest: "No", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 6
+  - {in: Float32, out: Float16_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 129 ULP, budget 142 > ceiling 6
+  - {in: Float32, out: Float32, approx: "No", dest: "No", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419430
+  - {in: Float32, out: Float32, approx: "No", dest: "Yes", metric: tolerance}  # max 8258553 ULP, budget 9084409 > ceiling 419430
+  - {in: Float32, out: Float32, approx: "Yes", dest: "No", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419430
+  - {in: Float32, out: Float32, approx: "Yes", dest: "Yes", metric: tolerance}  # max 8388609 ULP, budget 9227470 > ceiling 419430
 
 
 
@@ -3105,8 +3105,8 @@ Reciprocal:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided
   - {in: Bfp4_b, out: Bfp8_b, approx: "No", dest: "Yes", metric: tolerance}  # max 385 ULP, block-quantized
   - {in: Bfp4_b, out: Bfp8_b, approx: "Yes", dest: "No", metric: tolerance}  # max 385 ULP, block-quantized
   - {in: Bfp4_b, out: Bfp8_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 385 ULP, block-quantized
-  - {in: Bfp4_b, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
-  - {in: Bfp4_b, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
+  - {in: Bfp4_b, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
+  - {in: Bfp4_b, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
   - {in: Bfp4_b, out: Float16_b, approx: "No", dest: "No", max_ulp: 2}  # max 1 ULP
   - {in: Bfp4_b, out: Float16_b, approx: "No", dest: "Yes", max_ulp: 0}  # max 0 ULP
   - {in: Bfp4_b, out: Float16_b, approx: "Yes", dest: "No", max_ulp: 2}  # max 1 ULP
@@ -3119,8 +3119,8 @@ Reciprocal:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided
   - {in: Bfp8_b, out: Bfp8_b, approx: "No", dest: "Yes", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Bfp8_b, out: Bfp8_b, approx: "Yes", dest: "No", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Bfp8_b, out: Bfp8_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 393 ULP, block-quantized
-  - {in: Bfp8_b, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
-  - {in: Bfp8_b, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
+  - {in: Bfp8_b, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
+  - {in: Bfp8_b, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
   - {in: Bfp8_b, out: Float16_b, approx: "No", dest: "No", max_ulp: 2}  # max 1 ULP
   - {in: Bfp8_b, out: Float16_b, approx: "No", dest: "Yes", max_ulp: 0}  # max 0 ULP
   - {in: Bfp8_b, out: Float16_b, approx: "Yes", dest: "No", max_ulp: 2}  # max 1 ULP
@@ -3133,24 +3133,24 @@ Reciprocal:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided
   - {in: Float16, out: Bfp8_b, approx: "No", dest: "Yes", metric: tolerance}  # max 17921 ULP, block-quantized
   - {in: Float16, out: Bfp8_b, approx: "Yes", dest: "No", metric: tolerance}  # max 14337 ULP, block-quantized
   - {in: Float16, out: Bfp8_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 17921 ULP, block-quantized
-  - {in: Float16, out: Float16, approx: "No", dest: "No", metric: tolerance}  # max 1024 ULP, budget 1127 > ceiling 52
-  - {in: Float16, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
-  - {in: Float16, out: Float16, approx: "Yes", dest: "No", metric: tolerance}  # max 1024 ULP, budget 1127 > ceiling 52
-  - {in: Float16, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 513 ULP, budget 565 > ceiling 52
-  - {in: Float16, out: Float16_b, approx: "No", dest: "No", metric: tolerance}  # max 14337 ULP, budget 15771 > ceiling 7
+  - {in: Float16, out: Float16, approx: "No", dest: "No", metric: tolerance}  # max 1024 ULP, budget 1127 > ceiling 51
+  - {in: Float16, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
+  - {in: Float16, out: Float16, approx: "Yes", dest: "No", metric: tolerance}  # max 1024 ULP, budget 1127 > ceiling 51
+  - {in: Float16, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 513 ULP, budget 565 > ceiling 51
+  - {in: Float16, out: Float16_b, approx: "No", dest: "No", metric: tolerance}  # max 14337 ULP, budget 15771 > ceiling 6
   - {in: Float16, out: Float16_b, approx: "No", dest: "Yes", max_ulp: 2}  # max 1 ULP
-  - {in: Float16, out: Float16_b, approx: "Yes", dest: "No", metric: tolerance}  # max 14337 ULP, budget 15771 > ceiling 7
+  - {in: Float16, out: Float16_b, approx: "Yes", dest: "No", metric: tolerance}  # max 14337 ULP, budget 15771 > ceiling 6
   - {in: Float16, out: Float16_b, approx: "Yes", dest: "Yes", max_ulp: 2}  # max 1 ULP
-  - {in: Float16, out: Float32, approx: "No", dest: "No", metric: tolerance}  # max 939524097 ULP, budget 1033476507 > ceiling 419431
+  - {in: Float16, out: Float32, approx: "No", dest: "No", metric: tolerance}  # max 939524097 ULP, budget 1033476507 > ceiling 419430
   - {in: Float16, out: Float32, approx: "No", dest: "Yes", max_ulp: 18013}  # max 16375 ULP
-  - {in: Float16, out: Float32, approx: "Yes", dest: "No", metric: tolerance}  # max 939524097 ULP, budget 1033476507 > ceiling 419431
+  - {in: Float16, out: Float32, approx: "Yes", dest: "No", metric: tolerance}  # max 939524097 ULP, budget 1033476507 > ceiling 419430
   - {in: Float16, out: Float32, approx: "Yes", dest: "Yes", max_ulp: 19821}  # max 18019 ULP
   - {in: Float16_b, out: Bfp8_b, approx: "No", dest: "No", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Float16_b, out: Bfp8_b, approx: "No", dest: "Yes", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Float16_b, out: Bfp8_b, approx: "Yes", dest: "No", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Float16_b, out: Bfp8_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 393 ULP, block-quantized
-  - {in: Float16_b, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
-  - {in: Float16_b, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 513 ULP, budget 565 > ceiling 52
+  - {in: Float16_b, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
+  - {in: Float16_b, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 513 ULP, budget 565 > ceiling 51
   - {in: Float16_b, out: Float16_b, approx: "No", dest: "No", max_ulp: 2}  # max 1 ULP
   - {in: Float16_b, out: Float16_b, approx: "No", dest: "Yes", max_ulp: 0}  # max 0 ULP
   - {in: Float16_b, out: Float16_b, approx: "Yes", dest: "No", max_ulp: 2}  # max 1 ULP
@@ -3164,9 +3164,9 @@ Reciprocal:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided
   - {in: Float32, out: Bfp8_b, approx: "Yes", dest: "No", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Float32, out: Bfp8_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 393 ULP, block-quantized
   - {in: Float32, out: Float16, approx: "No", dest: "No", metric: tolerance}  # not measurable: 510 lane(s) non-finite against a finite golden (x=-6.07967e-05: -16448 -> nan; x=-6.05583e-05: -16512 -> nan; x=-6.03199e-05: -16576 -> nan; x=-6.00815e-05: -16640 -> nan)
-  - {in: Float32, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
+  - {in: Float32, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
   - {in: Float32, out: Float16, approx: "Yes", dest: "No", metric: tolerance}  # not measurable: 510 lane(s) non-finite against a finite golden (x=-6.07967e-05: -16448 -> nan; x=-6.05583e-05: -16512 -> nan; x=-6.03199e-05: -16576 -> nan; x=-6.00815e-05: -16640 -> nan)
-  - {in: Float32, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
+  - {in: Float32, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
   - {in: Float32, out: Float16_b, approx: "No", dest: "No", max_ulp: 2}  # max 1 ULP
   - {in: Float32, out: Float16_b, approx: "No", dest: "Yes", max_ulp: 0}  # max 0 ULP
   - {in: Float32, out: Float16_b, approx: "Yes", dest: "No", max_ulp: 2}  # max 1 ULP
@@ -3385,11 +3385,11 @@ Rpow:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Float
   - {in: Float16, out: Bfp8_b, dest: "No", metric: tolerance}  # max 18177 ULP, block-quantized
   - {in: Float16, out: Bfp8_b, dest: "Yes", metric: tolerance}  # max 18177 ULP, block-quantized
   - {in: Float16, out: Float16, dest: "No", max_ulp: 9}  # max 8 ULP
-  - {in: Float16, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
-  - {in: Float16, out: Float16_b, dest: "No", metric: tolerance}  # max 127 ULP, budget 140 > ceiling 7
-  - {in: Float16, out: Float16_b, dest: "Yes", metric: tolerance}  # max 12929 ULP, budget 14222 > ceiling 7
-  - {in: Float16, out: Float32, dest: "No", metric: tolerance}  # max 8380416 ULP, budget 9218458 > ceiling 419431
-  - {in: Float16, out: Float32, dest: "Yes", metric: tolerance}  # max 847249409 ULP, budget 931974350 > ceiling 419431
+  - {in: Float16, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
+  - {in: Float16, out: Float16_b, dest: "No", metric: tolerance}  # max 127 ULP, budget 140 > ceiling 6
+  - {in: Float16, out: Float16_b, dest: "Yes", metric: tolerance}  # max 12929 ULP, budget 14222 > ceiling 6
+  - {in: Float16, out: Float32, dest: "No", metric: tolerance}  # max 8380416 ULP, budget 9218458 > ceiling 419430
+  - {in: Float16, out: Float32, dest: "Yes", metric: tolerance}  # max 847249409 ULP, budget 931974350 > ceiling 419430
   - {in: Float16_b, out: Bfp8_b, dest: "No", metric: tolerance}  # max 32437 ULP, block-quantized
   - {in: Float16_b, out: Bfp8_b, dest: "Yes", metric: tolerance}  # not measurable: 1536 lane(s) non-finite against a finite golden (x=-3.38953e+38: 0 -> inf; x=-3.37624e+38: 0 -> inf; x=-3.36295e+38: 0 -> inf; x=-3.34965e+38: 0 -> inf)
   - {in: Float16_b, out: Float16, dest: "Yes", metric: tolerance}  # not measurable: 1536 lane(s) non-finite against a finite golden (x=-3.38953e+38: 0 -> nan; x=-3.37624e+38: 0 -> nan; x=-3.36295e+38: 0 -> nan; x=-3.34965e+38: 0 -> nan)
@@ -3519,14 +3519,14 @@ ScalarSub:
 Selu:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Float32 sweep, wormhole, 2026-09-28, except where a row says otherwise
   - {in: Bfp4_b, out: Bfp8_b, dest: "No", metric: tolerance}  # max 391 ULP, block-quantized
   - {in: Bfp4_b, out: Bfp8_b, dest: "Yes", metric: tolerance}  # max 391 ULP, block-quantized
-  - {in: Bfp4_b, out: Float16, dest: "Yes", metric: tolerance}  # max 485 ULP, budget 534 > ceiling 52
+  - {in: Bfp4_b, out: Float16, dest: "Yes", metric: tolerance}  # max 485 ULP, budget 534 > ceiling 51
   - {in: Bfp4_b, out: Float16_b, dest: "No", max_ulp: 2}  # max 1 ULP
   - {in: Bfp4_b, out: Float16_b, dest: "Yes", max_ulp: 0}  # max 0 ULP
   - {in: Bfp4_b, out: Float32, dest: "No", max_ulp: 72090}  # max 65536 ULP
   - {in: Bfp4_b, out: Float32, dest: "Yes", max_ulp: 35305}  # max 32095 ULP
   - {in: Bfp8_b, out: Bfp8_b, dest: "No", metric: tolerance}  # not measurable: 2 lane(s) non-finite against a finite golden (x=3.21673e+38: 0 -> inf; x=3.23002e+38: 0 -> inf)
   - {in: Bfp8_b, out: Bfp8_b, dest: "Yes", metric: tolerance}  # not measurable: 2 lane(s) non-finite against a finite golden (x=3.21673e+38: 0 -> inf; x=3.23002e+38: 0 -> inf)
-  - {in: Bfp8_b, out: Float16, dest: "Yes", metric: tolerance}  # max 511 ULP, budget 563 > ceiling 52
+  - {in: Bfp8_b, out: Float16, dest: "Yes", metric: tolerance}  # max 511 ULP, budget 563 > ceiling 51
   - {in: Bfp8_b, out: Float16_b, dest: "No", max_ulp: 2}  # max 1 ULP
   - {in: Bfp8_b, out: Float16_b, dest: "Yes", max_ulp: 0}  # max 0 ULP
   - {in: Bfp8_b, out: Float32, dest: "No", max_ulp: 72090}  # max 65536 ULP
@@ -3535,21 +3535,21 @@ Selu:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Float
   - {in: Float16, out: Bfp8_b, dest: "Yes", metric: tolerance}  # max 18177 ULP, block-quantized
   - {in: Float16, out: Float16, dest: "No", metric: tolerance}  # not measurable: 3 lane(s) non-finite against a finite golden (x=62272: 65440 -> inf; x=62304: 65472 -> inf; x=62336: 65504 -> inf)
   - {in: Float16, out: Float16, dest: "Yes", max_ulp: 2}  # max 1 ULP
-  - {in: Float16, out: Float16_b, dest: "No", metric: tolerance}  # max 127 ULP, budget 140 > ceiling 7
+  - {in: Float16, out: Float16_b, dest: "No", metric: tolerance}  # max 127 ULP, budget 140 > ceiling 6
   - {in: Float16, out: Float16_b, dest: "Yes", max_ulp: 2}  # max 1 ULP
-  - {in: Float16, out: Float32, dest: "No", metric: tolerance}  # max 8380416 ULP, budget 9218458 > ceiling 419431
+  - {in: Float16, out: Float32, dest: "No", metric: tolerance}  # max 8380416 ULP, budget 9218458 > ceiling 419430
   - {in: Float16, out: Float32, dest: "Yes", max_ulp: 4513}  # max 4102 ULP
   - {in: Float16_b, out: Bfp8_b, dest: "No", metric: tolerance}  # not measurable: 2 lane(s) non-finite against a finite golden (x=3.21673e+38: 0 -> inf; x=3.23002e+38: 0 -> inf)
   - {in: Float16_b, out: Bfp8_b, dest: "Yes", metric: tolerance}  # not measurable: 3 lane(s) non-finite against a finite golden (x=3.20344e+38: 0 -> inf; x=3.21673e+38: 0 -> inf; x=3.23002e+38: 0 -> inf)
-  - {in: Float16_b, out: Float16, dest: "Yes", metric: tolerance}  # max 511 ULP, budget 563 > ceiling 52
+  - {in: Float16_b, out: Float16, dest: "Yes", metric: tolerance}  # max 511 ULP, budget 563 > ceiling 51
   - {in: Float16_b, out: Float16_b, dest: "No", max_ulp: 0}  # max 0 ULP
   - {in: Float16_b, out: Float16_b, dest: "Yes", max_ulp: 0}  # max 0 ULP
   - {in: Float16_b, out: Float32, dest: "No", max_ulp: 0}  # max 0 ULP
   - {in: Float16_b, out: Float32, dest: "Yes", max_ulp: 36019}  # max 32744 ULP
   - {in: Float32, out: Bfp8_b, dest: "No", metric: tolerance}  # not measurable: 2 lane(s) non-finite against a finite golden (x=3.21673e+38: 0 -> inf; x=3.23002e+38: 0 -> inf)
   - {in: Float32, out: Bfp8_b, dest: "Yes", metric: tolerance}  # not measurable: 3 lane(s) non-finite against a finite golden (x=3.20344e+38: 0 -> inf; x=3.21673e+38: 0 -> inf; x=3.23002e+38: 0 -> inf)
-  - {in: Float32, out: Float16, dest: "No", metric: tolerance}  # max 1793 ULP, budget 1973 > ceiling 52
-  - {in: Float32, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
+  - {in: Float32, out: Float16, dest: "No", metric: tolerance}  # max 1793 ULP, budget 1973 > ceiling 51
+  - {in: Float32, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
   - {in: Float32, out: Float16_b, dest: "No", max_ulp: 0}  # max 0 ULP
   - {in: Float32, out: Float16_b, dest: "Yes", max_ulp: 0}  # max 0 ULP
   - {in: Float32, out: Float32, dest: "No", max_ulp: 0}  # max 0 ULP
@@ -4657,14 +4657,14 @@ SqrtCustom:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided
 Square:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Float32 sweep, wormhole, 2026-09-28, except where a row says otherwise
   - {in: Bfp4_b, out: Bfp8_b, dest: "No", metric: tolerance}  # max 32401 ULP, block-quantized
   - {in: Bfp4_b, out: Bfp8_b, dest: "Yes", metric: tolerance}  # max 32401 ULP, block-quantized
-  - {in: Bfp4_b, out: Float16, dest: "Yes", metric: tolerance}  # max 448 ULP, budget 493 > ceiling 52
+  - {in: Bfp4_b, out: Float16, dest: "Yes", metric: tolerance}  # max 448 ULP, budget 493 > ceiling 51
   - {in: Bfp4_b, out: Float16_b, dest: "No", max_ulp: 0}  # max 0 ULP
   - {in: Bfp4_b, out: Float16_b, dest: "Yes", max_ulp: 0}  # max 0 ULP
   - {in: Bfp4_b, out: Float32, dest: "No", max_ulp: 0}  # max 0 ULP
   - {in: Bfp4_b, out: Float32, dest: "Yes", max_ulp: 0}  # max 0 ULP
   - {in: Bfp8_b, out: Bfp8_b, dest: "No", metric: tolerance}  # max 32505 ULP, block-quantized
   - {in: Bfp8_b, out: Bfp8_b, dest: "Yes", metric: tolerance}  # max 32505 ULP, block-quantized
-  - {in: Bfp8_b, out: Float16, dest: "Yes", metric: tolerance}  # max 506 ULP, budget 557 > ceiling 52
+  - {in: Bfp8_b, out: Float16, dest: "Yes", metric: tolerance}  # max 506 ULP, budget 557 > ceiling 51
   - {in: Bfp8_b, out: Float16_b, dest: "No", max_ulp: 2}  # max 1 ULP
   - {in: Bfp8_b, out: Float16_b, dest: "Yes", max_ulp: 2}  # max 1 ULP
   - {in: Bfp8_b, out: Float32, dest: "No", max_ulp: 72090}  # max 65536 ULP
@@ -4672,14 +4672,14 @@ Square:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Flo
   - {in: Float16, out: Bfp8_b, dest: "No", metric: tolerance}  # max 18177 ULP, block-quantized
   - {in: Float16, out: Bfp8_b, dest: "Yes", metric: tolerance}  # max 18177 ULP, block-quantized
   - {in: Float16, out: Float16, dest: "No", metric: tolerance}  # not measurable: 4 lane(s) non-finite against a finite golden (x=-255.875: 65472 -> inf; x=-255.75: 65408 -> inf; x=255.75: 65408 -> inf; x=255.875: 65472 -> inf)
-  - {in: Float16, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
-  - {in: Float16, out: Float16_b, dest: "No", metric: tolerance}  # max 14337 ULP, budget 15771 > ceiling 7
-  - {in: Float16, out: Float16_b, dest: "Yes", metric: tolerance}  # max 12929 ULP, budget 14222 > ceiling 7
-  - {in: Float16, out: Float32, dest: "No", metric: tolerance}  # max 939524097 ULP, budget 1033476507 > ceiling 419431
-  - {in: Float16, out: Float32, dest: "Yes", metric: tolerance}  # max 847245825 ULP, budget 931970408 > ceiling 419431
+  - {in: Float16, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
+  - {in: Float16, out: Float16_b, dest: "No", metric: tolerance}  # max 14337 ULP, budget 15771 > ceiling 6
+  - {in: Float16, out: Float16_b, dest: "Yes", metric: tolerance}  # max 12929 ULP, budget 14222 > ceiling 6
+  - {in: Float16, out: Float32, dest: "No", metric: tolerance}  # max 939524097 ULP, budget 1033476507 > ceiling 419430
+  - {in: Float16, out: Float32, dest: "Yes", metric: tolerance}  # max 847245825 ULP, budget 931970408 > ceiling 419430
   - {in: Float16_b, out: Bfp8_b, dest: "No", metric: tolerance}  # not measurable: 1 lane(s) non-finite against a finite golden (x=1.83747e+19: 0 -> inf)
   - {in: Float16_b, out: Bfp8_b, dest: "Yes", metric: tolerance}  # not measurable: 1 lane(s) non-finite against a finite golden (x=1.83747e+19: 0 -> inf)
-  - {in: Float16_b, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
+  - {in: Float16_b, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
   - {in: Float16_b, out: Float16_b, dest: "No", max_ulp: 0}  # max 0 ULP
   - {in: Float16_b, out: Float16_b, dest: "Yes", max_ulp: 2}  # max 1 ULP
   - {in: Float16_b, out: Float32, dest: "No", max_ulp: 0}  # max 0 ULP
@@ -4687,7 +4687,7 @@ Square:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Flo
   - {in: Float32, out: Bfp8_b, dest: "No", metric: tolerance}  # not measurable: 1 lane(s) non-finite against a finite golden (x=1.83747e+19: 0 -> inf)
   - {in: Float32, out: Bfp8_b, dest: "Yes", metric: tolerance}  # not measurable: 1 lane(s) non-finite against a finite golden (x=1.83747e+19: 0 -> inf)
   - {in: Float32, out: Float16, dest: "No", max_ulp: 5}  # max 4 ULP
-  - {in: Float32, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 52
+  - {in: Float32, out: Float16, dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
   - {in: Float32, out: Float16_b, dest: "No", max_ulp: 0}  # max 0 ULP
   - {in: Float32, out: Float16_b, dest: "Yes", max_ulp: 2}  # max 1 ULP
   - {in: Float32, out: Float32, dest: "No", max_ulp: 0}  # max 0 ULP

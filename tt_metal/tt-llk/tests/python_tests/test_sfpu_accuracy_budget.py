@@ -732,7 +732,7 @@ def test_enrolled_ops_is_sorted_and_stable():
 
 #: Enrolled ops with no step budget anywhere: the 3-segment LUT pair, two binaries
 #: whose per-format tolerances moved into the table, and six transcendentals whose
-#: *best* cell is already past its output's usable ceiling (7 bf16, 52 fp16, 26
+#: *best* cell is already past its output's usable ceiling (6 bf16, 51 fp16, 25
 #: Bfp8_b): Erfc 376, Xielu 512, Polygamma 614, Softplus 6,416, Lgamma 32,295 and
 #: Digamma 33,840 steps. Lgamma's worst, 2.3e9, is issue #55356.
 #:
@@ -960,7 +960,9 @@ def test_no_budget_exceeds_its_formats_usable_ceiling():
 def test_the_usable_ceiling_is_tighter_than_the_meaningful_one():
     for fmt in ULP_FORMATS:
         assert usable_budget_ceiling(fmt) < MAX_MEANINGFUL_ULP[ulp_dtype(fmt)], fmt.name
-    assert usable_budget_ceiling(DataFormat.Float16_b) == 7  # 6.4, rounded up
+    # 6.4, rounded down: a 7-step budget accepts bf16 128 -> 135, which the 0.05 +
+    # 0.05 * 128 = 6.45 tolerance it replaces refuses.
+    assert usable_budget_ceiling(DataFormat.Float16_b) == 6
 
 
 def test_a_block_float_output_is_never_enrolled_only_incidentally_covered():
