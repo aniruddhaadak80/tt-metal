@@ -110,14 +110,24 @@ class _MoEPerfCase:
 # this shape already had a low mode ~22% under nominal while the code was unchanged. Program count
 # does not separate the two modes, so the "short record window" check in the comment above does not
 # explain it either. Re-cutting the midpoint onto the low mode would fail every nominal run.
-# Needed before touching this number: two or three more samples on main, and the mode identified.
+#
+# Re-centred 2026-09-29 UPWARD to 5,344,249 ns, the median of the seven nominal samples on main:
+# 5,192,521 / 5,298,751 / 5,331,206 / 5,344,249 / 5,362,686 / 5,386,625 / 5,438,128 ns (runs
+# 35562931923, 36537053700, 36380072947, 36219496340, 35490556003, 35422790757, 36295942167).
+# The 09-28 cut to 5,077,713 was a single branch sample and sat below that whole population, so the
+# very next nominal run failed the UPPER edge at 5,298,751 -- the gate was mis-centred, not the
+# model. 4.7% peak to peak against a +/-4% band puts all seven inside [5,130,479, 5,558,019].
+# This is the "re-cut from the median of several runs" the 09-03 note asked for, finally done with
+# enough samples. The ~4.0 ms low mode is left OUT of the median deliberately: it is an anomaly to
+# diagnose, not part of the distribution, and it will keep tripping the lower edge until someone
+# finds it.
 #
 # K2.7-Code is architecturally identical to K2.6 (61 layers, 384 routed experts, same dims), so the
 # MoE shapes are unchanged; only the label moved.
 _K2_7 = _MoEPerfCase(
     label="kimi-k2.7",
     config=KimiK27Config,
-    expected_ns=5_077_713,
+    expected_ns=5_344_249,
     # 4%, not 3%: K2.7 runs FIRST in the merged job, so it absorbs the warm-up variability that K3,
     # running second on an already-warm device, does not -- five samples on the previous shape spanned
     # 7.12% peak to peak against K3's 0.44%. Do NOT tighten this to match K3; the asymmetry is a
