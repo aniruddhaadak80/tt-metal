@@ -432,7 +432,7 @@ models:
     wh_llmbox: 131
     wh_n150: 52
     wh_galaxy: 40
-    wh_galaxy_perf: 145
+    wh_galaxy_perf: 115
     bh_p150: 52
     bh_quietbox_2: 204
     bh_galaxy: 60
