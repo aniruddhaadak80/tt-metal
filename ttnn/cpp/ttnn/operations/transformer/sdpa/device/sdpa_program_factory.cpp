@@ -83,12 +83,15 @@ tt::DataFormat select_mask_dataformat(const std::optional<Tensor>& attn_mask, bo
 // legacy kernel is faster, so small chunks with fp32 DEST stay on the legacy kernel. Its normalize sums the rows
 // with the Blackhole SFPU row reduce, so fp32 DEST streams on Blackhole only. That normalize is a fixed cost per Q
 // chunk, which the K loop pays back from 16 K chunks on (measured on Blackhole: 0.5 percent slower at 8).
+// The streaming kernel runs the approximate softmax exp, so with exp_approx_mode off fp32 DEST keeps the legacy
+// kernel, which then runs the accurate one.
 constexpr uint32_t kFp32StreamingMinChunkTiles = 8;
 constexpr uint32_t kFp32StreamingMinKChunks = 16;
 
 bool can_use_streaming_compute(
     tt::ARCH arch,
     bool fp32_dest_acc_en,
+    bool exp_approx_mode,
     uint32_t q_chunk_tiles,
     uint32_t k_chunk_tiles,
     uint32_t k_num_chunks,
@@ -97,7 +100,7 @@ bool can_use_streaming_compute(
     if (!fp32_dest_acc_en) {
         return true;
     }
-    return arch == tt::ARCH::BLACKHOLE && q_chunk_tiles >= kFp32StreamingMinChunkTiles &&
+    return arch == tt::ARCH::BLACKHOLE && exp_approx_mode && q_chunk_tiles >= kFp32StreamingMinChunkTiles &&
            k_chunk_tiles >= kFp32StreamingMinChunkTiles && k_num_chunks >= kFp32StreamingMinKChunks &&
            fp32_intermediate_bytes <= l1_budget_bytes;
 }
@@ -746,7 +749,14 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
     const uint32_t l1_budget_bytes =
         device->l1_size_per_core() - device->allocator()->get_base_allocator_addr(tt::tt_metal::HalMemType::L1);
     const bool use_streaming_compute = can_use_streaming_compute(
-        device->arch(), fp32_dest_acc_en, Sq_chunk_t, Sk_chunk_t, k_num_chunks, fp32_streaming_bytes, l1_budget_bytes);
+        device->arch(),
+        fp32_dest_acc_en,
+        exp_approx_mode,
+        Sq_chunk_t,
+        Sk_chunk_t,
+        k_num_chunks,
+        fp32_streaming_bytes,
+        l1_budget_bytes);
 
     const bool has_sliding_window = sliding_window_size.value_or(0) != 0;
     // A user-provided dense mask on the streaming path takes its own per-chunk apply
