@@ -7,6 +7,7 @@
 import math
 import os
 from dataclasses import replace
+from unittest import mock
 
 import pytest
 import torch
@@ -16,10 +17,10 @@ import ttnn
 from models.common.utility_functions import skip_with_llk_assert, skip_with_watcher
 from models.demos.deepseek_v3_d_p.utils.smbus_telemetry import is_high_power
 from tests.nightly.blackhole.sdpa.test_ring_joint_sdpa import (
+    CHUNKED_PREFILL_CHUNK_ID_ENV,
     CHUNKED_PREFILL_CHUNK_SIZE,
     CHUNKED_PREFILL_TOTAL_SEQ,
     MESH_CONFIG,
-    RING_JOINT_PERF_MARGIN,
     RING_MLA_CHUNKED_MODEL_CONFIGS,
     RING_MLA_CHUNKED_PERF_CHECK_CONFIGS,
     _make_ring_mla_metadata,
@@ -28,6 +29,7 @@ from tests.nightly.blackhole.sdpa.test_ring_joint_sdpa import (
     compute_chunked_prefill_perf_check_utilization,
     open_ring_joint_sdpa_runtime,
     profile_ring_joint_runtime_duration_ns,
+    run_ring_joint_sdpa_chunked,
 )
 from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import comp_pcc
 
@@ -498,7 +500,7 @@ def test_ring_mla_split_kv_rejects_unsupported_geometry(invalid_case, error, exp
         close_ring_joint_sdpa_runtime(runtime)
 
 
-def run_ring_mla_split_kv_perf(model_name, q_chunk_size, k_chunk_size, repeats=1):
+def run_ring_mla_split_kv_perf(model_name, q_chunk_size, k_chunk_size, repeats=1, traced=False):
     """Profile the final chunk of a production chunked prefill through split-KV ring MLA.
 
     Same work as test_ring_mla_chunked_perf_check (per-device Q slab, heads, latent
@@ -519,7 +521,8 @@ def run_ring_mla_split_kv_perf(model_name, q_chunk_size, k_chunk_size, repeats=1
     source_capacity = depth * region
 
     config = replace(MESH_CONFIG, tp_size=sp, sp_size=tp)
-    runtime = open_ring_joint_sdpa_runtime(config, full_mesh=True)
+    runtime = open_ring_joint_sdpa_runtime(config, full_mesh=True, trace_region_size=4 * 1024 * 1024 if traced else 0)
+    trace_id = None
     try:
         mesh = runtime.mesh_device
         assert tuple(mesh.shape) == (sp, tp)
@@ -569,10 +572,18 @@ def run_ring_mla_split_kv_perf(model_name, q_chunk_size, k_chunk_size, repeats=1
         )
 
         def run():
-            ttnn.transformer.ring_mla(tt_q, tt_k, **kwargs)
+            if trace_id is None:
+                ttnn.transformer.ring_mla(tt_q, tt_k, **kwargs)
+            else:
+                ttnn.execute_trace(mesh, trace_id, cq_id=0, blocking=False)
             ttnn.synchronize_device(mesh)
 
         run()  # compile outside the profiled window
+        if traced:
+            trace_id = ttnn.begin_trace_capture(mesh, cq_id=0)
+            ttnn.transformer.ring_mla(tt_q, tt_k, **kwargs)
+            ttnn.end_trace_capture(mesh, trace_id, cq_id=0)
+            run()
         utilizations = []
         for _ in range(repeats):
             duration_ns, _ = profile_ring_joint_runtime_duration_ns(mesh, run)
@@ -588,6 +599,8 @@ def run_ring_mla_split_kv_perf(model_name, q_chunk_size, k_chunk_size, repeats=1
             utilizations.append(utilization)
         return utilizations
     finally:
+        if trace_id is not None:
+            ttnn.release_trace(mesh, trace_id)
         close_ring_joint_sdpa_runtime(runtime)
 
 
@@ -598,7 +611,43 @@ def test_ring_mla_split_kv_perf_impl(model_name):
     run_ring_mla_split_kv_perf(model_name, 32, 640, repeats=int(os.environ.get("SPLIT_KV_PERF_REPEATS", "5")))
 
 
-@pytest.mark.timeout(600)
+# Split KV and the classic SP ring do identical math per device; allow this much relative
+# utilization loss for the extra fabric hops and packed-source bookkeeping.
+SPLIT_KV_RELATIVE_PERF_MARGIN = 0.025
+
+
+def classic_ring_mla_chunked_utilization(model_name, q_chunk_size, k_chunk_size):
+    """Utilization of the classic SP-ring ring_mla on the final 50k+5k chunk (test_ring_mla_chunked_perf_check)."""
+    model = RING_MLA_CHUNKED_MODEL_CONFIGS[model_name]
+    chunk = CHUNKED_PREFILL_CHUNK_SIZE
+    perf_chunk = CHUNKED_PREFILL_TOTAL_SEQ // chunk - 1
+    runtime = open_ring_joint_sdpa_runtime(MESH_CONFIG)
+    try:
+        with mock.patch.dict(os.environ, {CHUNKED_PREFILL_CHUNK_ID_ENV: str(perf_chunk)}):
+            duration_ns, _ = profile_ring_joint_runtime_duration_ns(
+                runtime.mesh_device,
+                lambda: run_ring_joint_sdpa_chunked(
+                    MESH_CONFIG,
+                    model,
+                    chunk_size=chunk,
+                    qk_configs=[(q_chunk_size, k_chunk_size)],
+                    persistent_buffer_mode="reuse_max",
+                    use_ring_mla=True,
+                    do_check=False,
+                    reuse_kv_buffer=False,
+                    runtime=runtime,
+                ),
+            )
+    finally:
+        close_ring_joint_sdpa_runtime(runtime)
+    utilization, _ = compute_chunked_prefill_perf_check_utilization(
+        MESH_CONFIG, model, chunk, perf_chunk, duration_ns, MESH_CONFIG.sdpa_cores
+    )
+    logger.info(f"classic ring_mla {model_name}-q{q_chunk_size}-k{k_chunk_size} 50k+5k: math_util={utilization:.2f}%")
+    return utilization
+
+
+@pytest.mark.timeout(900)
 @pytest.mark.parametrize(
     "model_name, q_chunk_size, k_chunk_size, ring_size_expected, expected_util",
     RING_MLA_CHUNKED_PERF_CHECK_CONFIGS,
@@ -611,17 +660,21 @@ def test_ring_mla_split_kv_perf_impl(model_name):
     reason="galaxy perf job requires a high-power (>=130W TDP) host",
 )
 def test_ring_mla_split_kv_perf_check(model_name, q_chunk_size, k_chunk_size, ring_size_expected, expected_util):
-    """Split-KV must not fall below the classic SP-ring utilization for the same per-device work.
+    """Split KV must stay within SPLIT_KV_RELATIVE_PERF_MARGIN of the classic SP ring, measured back to
+    back on the same host so power limits and matmul throttling affect both alike.
 
-    Reuses the classic expected utilization on purpose: both layouts do identical math per
-    device, so a split-KV regression shows up as a gap to the classic number. One-sided, so a
-    split-KV improvement (or an upward classic retune) does not fail here.
+    Split KV is profiled under trace replay, as deployed: eager dispatch skews program start across the
+    32 chips, and a split-KV device holds only 1/TP of the KV locally to hide that skew behind.
     """
     if MESH_CONFIG.sp_size != ring_size_expected:
         pytest.skip(f"Expected SP size {ring_size_expected}, current topology has {MESH_CONFIG.sp_size}")
-    (utilization,) = run_ring_mla_split_kv_perf(model_name, q_chunk_size, k_chunk_size)
-    lower = expected_util * (1 - RING_JOINT_PERF_MARGIN)
-    assert utilization >= lower, (
-        f"Split-KV math utilization {utilization:.2f}% below the classic floor {lower:.2f}% "
-        f"(classic expected {expected_util:.2f}%)"
+    classic = classic_ring_mla_chunked_utilization(model_name, q_chunk_size, k_chunk_size)
+    split = sorted(run_ring_mla_split_kv_perf(model_name, q_chunk_size, k_chunk_size, repeats=3, traced=True))[1]
+    logger.info(
+        f"split-KV vs classic {model_name}: {split:.2f}% vs {classic:.2f}% "
+        f"({(split / classic - 1) * 100:+.2f}%, classic expected {expected_util:.2f}%)"
+    )
+    assert split >= classic * (1 - SPLIT_KV_RELATIVE_PERF_MARGIN), (
+        f"Split-KV math utilization {split:.2f}% is more than {SPLIT_KV_RELATIVE_PERF_MARGIN * 100:.1f}% "
+        f"below the classic SP ring's {classic:.2f}%"
     )
