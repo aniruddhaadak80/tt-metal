@@ -1660,14 +1660,14 @@ Gelu:  # measured by: exhaustive Float16_b/Float16/Bfp8_b/Bfp4_b + strided Float
   - {in: Float16, out: Bfp8_b, approx: "No", dest: "Yes", metric: tolerance}  # max 284 ULP, block-quantized
   - {in: Float16, out: Bfp8_b, approx: "Yes", dest: "No", metric: tolerance}  # max 29876 ULP, block-quantized
   - {in: Float16, out: Bfp8_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 29876 ULP, block-quantized
-  - {in: Float16, out: Float16, approx: "No", dest: "No", metric: tolerance}  # max 1024 ULP, budget 1127 > ceiling 51
+  - {in: Float16, out: Float16, approx: "No", dest: "No", metric: tolerance}  # not measurable: 4 lane(s) non-finite against a finite golden at the top of the input range, settled by hand from the 2026-09-29 emit (this block is kept for its near_zero_atol rows); max 1024 ULP, budget 1127 > ceiling 51
   - {in: Float16, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
   - {in: Float16, out: Float16, approx: "Yes", dest: "No", metric: tolerance}  # max 11656 ULP, budget 12822 > ceiling 51
   - {in: Float16, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 11656 ULP, budget 12822 > ceiling 51
   - {in: Float16_b, out: Bfp8_b, approx: "No", dest: "No", metric: tolerance}  # max 393 ULP, block-quantized
-  - {in: Float16_b, out: Bfp8_b, approx: "No", dest: "Yes", metric: tolerance}  # max 393 ULP, block-quantized
+  - {in: Float16_b, out: Bfp8_b, approx: "No", dest: "Yes", metric: tolerance}  # not measurable: 3 lane(s) non-finite against a finite golden at the top of the input range, settled by hand from the 2026-09-29 emit (this block is kept for its near_zero_atol rows); max 393 ULP, block-quantized
   - {in: Float16_b, out: Bfp8_b, approx: "Yes", dest: "No", metric: tolerance}  # max 29581 ULP, block-quantized
-  - {in: Float16_b, out: Bfp8_b, approx: "Yes", dest: "Yes", metric: tolerance}  # max 29581 ULP, block-quantized
+  - {in: Float16_b, out: Bfp8_b, approx: "Yes", dest: "Yes", metric: tolerance}  # not measurable: 3 lane(s) non-finite against a finite golden at the top of the input range, settled by hand from the 2026-09-29 emit (this block is kept for its near_zero_atol rows); max 29581 ULP, block-quantized
   - {in: Float16_b, out: Float16, approx: "No", dest: "Yes", metric: tolerance}  # max 512 ULP, budget 564 > ceiling 51
   - {in: Float16_b, out: Float16, approx: "Yes", dest: "Yes", metric: tolerance}  # max 9048 ULP, budget 9953 > ceiling 51
   - {in: Float16, out: Float16_b, approx: "No", dest: "No", max_ulp: 2, near_zero_atol: 7.63e-05}  # max 2 ULP outside the floor, exhaustive Float16_b/Float16/Bfp8_b sweep, wormhole, 2026-09-23; the whole-format worst lane is 14337 steps, in the near-zero tail near_zero_atol holds. The P6 emitter does not carry a floor forward, so this cell had demoted to tolerance on that tail alone
