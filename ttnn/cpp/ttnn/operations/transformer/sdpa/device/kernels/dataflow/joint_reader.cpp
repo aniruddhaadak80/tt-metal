@@ -25,13 +25,12 @@ void kernel_main() {
     constexpr uint32_t padded_Nkt = get_compile_time_arg_val(9);
     constexpr uint32_t padded_Lqt = get_compile_time_arg_val(10);
     constexpr uint32_t padded_Lkt = get_compile_time_arg_val(11);
-    constexpr uint32_t num_cores = get_compile_time_arg_val(12);
 
-    constexpr uint32_t sender_semaphore_id = get_compile_time_arg_val(13);
-    constexpr uint32_t receiver_semaphore_id = get_compile_time_arg_val(14);
-    constexpr uint32_t valid_semaphore_id = get_compile_time_arg_val(15);
-    constexpr bool kv_chain = get_compile_time_arg_val(16) == 1;
-    constexpr auto q_args = TensorAccessorArgs<17>();
+    constexpr uint32_t sender_semaphore_id = get_compile_time_arg_val(12);
+    constexpr uint32_t receiver_semaphore_id = get_compile_time_arg_val(13);
+    constexpr uint32_t valid_semaphore_id = get_compile_time_arg_val(14);
+    constexpr bool kv_chain = get_compile_time_arg_val(15) == 1;
+    constexpr auto q_args = TensorAccessorArgs<16>();
     constexpr auto k_args = TensorAccessorArgs<q_args.next_compile_time_args_offset()>();
     constexpr auto v_args = TensorAccessorArgs<k_args.next_compile_time_args_offset()>();
     constexpr auto joint_q_args = TensorAccessorArgs<v_args.next_compile_time_args_offset()>();

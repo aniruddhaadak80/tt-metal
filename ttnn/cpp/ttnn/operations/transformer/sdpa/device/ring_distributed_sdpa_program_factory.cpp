@@ -99,7 +99,7 @@ ProgramDescriptor build_ring_distributed_sdpa_program_descriptor(
         operation_attributes.program_config;
     const std::optional<int64_t>& chunk_start_idx = operation_attributes.chunk_start_idx;
 
-    IDevice* device = input_tensor_q.device();
+    MeshDevice* device = input_tensor_q.device();
 
     auto [math_fidelity, math_approx_mode, fp32_dest_acc_en, packer_l1_acc, dst_full_sync_en] =
         get_compute_kernel_config_args(device->arch(), compute_kernel_config);
@@ -140,7 +140,6 @@ ProgramDescriptor build_ring_distributed_sdpa_program_descriptor(
     // Extract paged KV cache parameters first, before calculating Sk
     uint32_t block_size = 0;
     uint32_t block_size_t = 0;
-    [[maybe_unused]] uint32_t max_blocks_per_seq = 0;
     uint32_t page_table_stick_size = 0;
     tt::DataFormat page_table_df = tt::DataFormat::Int32;
 
@@ -153,7 +152,6 @@ ProgramDescriptor build_ring_distributed_sdpa_program_descriptor(
         const auto& page_table_tensor = page_table.value();
         block_size = k_shape[2];  // K's sequence dimension represents block size
         block_size_t = block_size / TILE_HEIGHT;
-        max_blocks_per_seq = page_table_tensor.padded_shape()[1];
         page_table_stick_size = page_table_tensor.buffer()->aligned_page_size();
         TT_FATAL(
             page_table_stick_size % 32 == 0,
@@ -238,7 +236,6 @@ ProgramDescriptor build_ring_distributed_sdpa_program_descriptor(
 
     const uint32_t qk_in0_num_subblocks = Sq_chunk_t / qk_out_subblock_h;
     const uint32_t qk_in1_num_subblocks = Sk_chunk_t / qk_out_subblock_w;
-    const uint32_t qk_num_blocks = DHt / qk_in0_block_w;
 
     // now for out0
     const uint32_t out_in0_block_w = Sk_chunk_t;
@@ -248,7 +245,6 @@ ProgramDescriptor build_ring_distributed_sdpa_program_descriptor(
 
     const uint32_t out_in0_num_subblocks = Sq_chunk_t / out_out_subblock_h;
     const uint32_t out_in1_num_subblocks = vDHt / out_out_subblock_w;
-    const uint32_t out_num_blocks = Sk_chunk_t / out_in0_block_w;
     const uint32_t drain_group_h = use_streaming_compute ? out_out_subblock_h : 0;
     if (use_streaming_compute) {
         out0_t = detail::streaming_cb_out_tiles(out_out_subblock_h, out_out_subblock_w, dst_size, Sq_chunk_t, vDHt);
@@ -263,7 +259,6 @@ ProgramDescriptor build_ring_distributed_sdpa_program_descriptor(
     // Each granularity must evenly divide its tile count to avoid dropping tiles
     const uint32_t stats_granularity = detail::find_valid_granularity(Sq_chunk_t, dst_size);
     const uint32_t sub_exp_granularity = detail::find_valid_granularity(Sk_chunk_t, dst_size);
-    const uint32_t mul_bcast_granularity = detail::find_valid_granularity(Sq_chunk_t * Sk_chunk_t, dst_size);
     const uint32_t dht_granularity = detail::find_valid_granularity(DHt, dst_size);
     const uint32_t reduce_granularity = detail::find_valid_granularity(Sq_chunk_t, dst_size / 2);
 
@@ -281,7 +276,6 @@ ProgramDescriptor build_ring_distributed_sdpa_program_descriptor(
         NQH,
         NKH,
         NKH,
-        Sqt,
         Skt,
         valid_Sqt * 2 * ring_size,
         valid_Skt,
@@ -307,17 +301,17 @@ ProgramDescriptor build_ring_distributed_sdpa_program_descriptor(
         0,                                            // sliding_window_size (ring uses no sliding window)
         static_cast<uint32_t>(use_streaming_compute)  // arg 28
     };
-    // Semaphore placeholders (not used in ring, but kernel expects them at indices 29-32)
+    // Semaphore placeholders (not used in ring, but kernel expects them at indices 28-31)
     reader_compile_time_args.push_back(0);                                            // sender_semaphore_id
     reader_compile_time_args.push_back(0);                                            // receiver_semaphore_id
     reader_compile_time_args.push_back(0);                                            // valid_semaphore_id
     reader_compile_time_args.push_back(0);                                            // mcast_enabled
-    reader_compile_time_args.push_back(static_cast<uint32_t>(use_zigzag_balancing));  // arg 33
-    reader_compile_time_args.push_back(0);  // arg 34: use_windowed_narrowing — ring is never windowed
-    reader_compile_time_args.push_back(0);  // arg 35: kv chain mode, ring has no chains
-    reader_compile_time_args.push_back(0);  // arg 36: mask block map, never on ring
-    reader_compile_time_args.push_back(2);  // arg 37: K/V CB depth in chunks (double buffer)
-    reader_compile_time_args.push_back(0);  // arg 38: fwd_done_semaphore_id, ring has no chains
+    reader_compile_time_args.push_back(static_cast<uint32_t>(use_zigzag_balancing));  // arg 32
+    reader_compile_time_args.push_back(0);  // arg 33: use_windowed_narrowing — ring is never windowed
+    reader_compile_time_args.push_back(0);  // arg 34: kv chain mode, ring has no chains
+    reader_compile_time_args.push_back(0);  // arg 35: mask block map, never on ring
+    reader_compile_time_args.push_back(2);  // arg 36: K/V CB depth in chunks (double buffer)
+    reader_compile_time_args.push_back(0);  // arg 37: fwd_done_semaphore_id, ring has no chains
 
     TensorAccessorArgs(input_tensor_q.buffer()).append_to(reader_compile_time_args);
     TensorAccessorArgs(input_tensor_k.buffer()).append_to(reader_compile_time_args);
@@ -335,35 +329,31 @@ ProgramDescriptor build_ring_distributed_sdpa_program_descriptor(
         // interleaved accessor args
         B,
         NQH,
-        NKH,
-        Sqt,
         valid_Sqt * 2,
         Sk,
-        DHt,
         vDHt,
         Sq_chunk_t,
         q_num_chunks,
         Sk_chunk_t,
         k_num_chunks,
         packed_identity_scalar,
-        scale_packed,
         num_cores,
         true,                                          //(std::uint32_t)is_causal,
         false,                                         //(std::uint32_t)use_provided_mask,
         false,                                         //(std::uint32_t)use_padded_mask,
         true,                                          //(uint32_t)is_chunked,
         0,                                             //(uint32_t)sliding_window_size,
-        1,                                             // arg 20: lightweight causal mask
-        static_cast<uint32_t>(use_streaming_compute),  // arg 21: row grouped cb_out drain
-        drain_group_h,                                 // arg 22: drain group height
-        0,                                             // arg 23: k_partial_col — non-streaming, no partial mask emitted
-        static_cast<uint32_t>(use_zigzag_balancing),   // arg 24
-        0,  // arg 25: use_windowed_mask — ring never uses windowed (block-diagonal) attention
-        0,  // arg 26: sender_semaphore_id, ring has no chains
-        0,  // arg 27: receiver_semaphore_id
-        0,  // arg 28: valid_semaphore_id
-        0,  // arg 29: fwd_done_semaphore_id
-        0,  // arg 30: kv chain mode
+        1,                                             // arg 16: lightweight causal mask
+        static_cast<uint32_t>(use_streaming_compute),  // arg 17: row grouped cb_out drain
+        drain_group_h,                                 // arg 18: drain group height
+        0,                                             // arg 19: k_partial_col — non-streaming, no partial mask emitted
+        static_cast<uint32_t>(use_zigzag_balancing),   // arg 20
+        0,  // arg 21: use_windowed_mask — ring never uses windowed (block-diagonal) attention
+        0,  // arg 22: sender_semaphore_id, ring has no chains
+        0,  // arg 23: receiver_semaphore_id
+        0,  // arg 24: valid_semaphore_id
+        0,  // arg 25: fwd_done_semaphore_id
+        0,  // arg 26: kv chain mode
     };
     // out accessor, then the cu_window and Q-offset accessors chained right after it (mirrors the regular
     // factory so the writer's accessor offset chain stays intact). Ring is never windowed → placeholders.
@@ -373,9 +363,6 @@ ProgramDescriptor build_ring_distributed_sdpa_program_descriptor(
 
     std::vector<uint32_t> compute_compile_time_args = {
         // matmul args
-        B,
-        NQH,
-        NKH,
         Skt,
         DHt,
         vDHt,
@@ -388,14 +375,11 @@ ProgramDescriptor build_ring_distributed_sdpa_program_descriptor(
         qk_out_subblock_h,
         qk_in0_num_subblocks,
         qk_in1_num_subblocks,
-        qk_num_blocks,
         out_in0_block_w,
         out_out_subblock_w,
         out_out_subblock_h,
         out_in0_num_subblocks,
         out_in1_num_subblocks,
-        out_num_blocks,
-        num_cores,
         true,   //(std::uint32_t)is_causal,
         false,  //(std::uint32_t)use_provided_mask,
         false,  //(std::uint32_t)use_padded_mask,
@@ -403,16 +387,15 @@ ProgramDescriptor build_ring_distributed_sdpa_program_descriptor(
         scale_packed,
         0,                                                  //(uint32_t)sliding_window_size,
         0,                                                  //(std::uint32_t)use_attention_sink,
-        static_cast<std::uint32_t>(use_streaming_compute),  // arg 30
-        valid_Skt,                                          // arg 31: unpadded K tiles for streaming padded_k_tiles
-        0u,                                           // arg 32: k_partial_col - unused on ring's non-streaming path
-        static_cast<uint32_t>(use_zigzag_balancing),  // arg 33: unified zigzag remap
-        0,                                            // arg 34: use_windowed_narrowing — ring is never windowed
+        static_cast<std::uint32_t>(use_streaming_compute),  // arg 24
+        valid_Skt,                                          // arg 25: unpadded K tiles for streaming padded_k_tiles
+        0u,                                           // arg 26: k_partial_col - unused on ring's non-streaming path
+        static_cast<uint32_t>(use_zigzag_balancing),  // arg 27: unified zigzag remap
+        0,                                            // arg 28: use_windowed_narrowing — ring is never windowed
     };
     std::map<std::string, std::string> defines_map;
     defines_map["STATS_GRANULARITY"] = std::to_string(stats_granularity);
     defines_map["SUB_EXP_GRANULARITY"] = std::to_string(sub_exp_granularity);
-    defines_map["MUL_BCAST_GRANULARITY"] = std::to_string(mul_bcast_granularity);
     defines_map["DHT_GRANULARITY"] = std::to_string(dht_granularity);
     defines_map["REDUCE_GRANULARITY"] = std::to_string(reduce_granularity);
     defines_map["EXP_APPROX_MODE"] = std::to_string(exp_approx_mode);
@@ -580,7 +563,6 @@ ProgramDescriptor build_ring_distributed_sdpa_program_descriptor(
              page_table_buffer,
              static_cast<Buffer*>(nullptr),  // attention_sink
              static_cast<Buffer*>(nullptr),  // chunk_start_idx (ring has none)
-             i,
              2u,
              chunked_q_chunk_offset_phase_1,
              read_offset_phase_1,
@@ -592,7 +574,6 @@ ProgramDescriptor build_ring_distributed_sdpa_program_descriptor(
         writer_desc.emplace_runtime_args(
             core,
             {out0_buffer,
-             i,
              2u,
              0u,  // use_chunk_start_idx_tensor (ring has no chunk_start_idx_tensor)
              chunked_q_chunk_offset_phase_1,
@@ -601,13 +582,12 @@ ProgramDescriptor build_ring_distributed_sdpa_program_descriptor(
              write_offset_phase_2,
              global_q_start,
              global_q_count,
-             0u,    // arg 10: cu_window_seqlens_addr — unused (ring is never windowed)
-             0u});  // arg 11: cu_window_seqlens_eles — unused (ring is never windowed)
+             0u,    // arg 9: cu_window_seqlens_addr — unused (ring is never windowed)
+             0u});  // arg 10: cu_window_seqlens_eles — unused (ring is never windowed)
 
         compute_desc.emplace_runtime_args(
             core,
-            {i,
-             2u,
+            {2u,
              0u,  // use_chunk_start_idx_tensor (ring has no chunk_start_idx_tensor)
              chunked_q_chunk_offset_phase_1,
              chunked_q_chunk_offset_phase_2,

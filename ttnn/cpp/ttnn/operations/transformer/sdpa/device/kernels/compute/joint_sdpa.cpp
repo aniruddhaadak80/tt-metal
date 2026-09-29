@@ -16,37 +16,33 @@
 #endif
 
 void kernel_main() {
-    constexpr uint32_t B = get_compile_time_arg_val(0);
-    constexpr uint32_t NH = get_compile_time_arg_val(1);
-    constexpr uint32_t Skt = get_compile_time_arg_val(2);
-    constexpr uint32_t DHt = get_compile_time_arg_val(3);
-    constexpr uint32_t Sq_chunk_t = get_compile_time_arg_val(4);
-    constexpr uint32_t Sk_chunk_t = get_compile_time_arg_val(5);
-    constexpr uint32_t k_num_chunks = get_compile_time_arg_val(6);
+    constexpr uint32_t Skt = get_compile_time_arg_val(0);
+    constexpr uint32_t DHt = get_compile_time_arg_val(1);
+    constexpr uint32_t Sq_chunk_t = get_compile_time_arg_val(2);
+    constexpr uint32_t Sk_chunk_t = get_compile_time_arg_val(3);
+    constexpr uint32_t k_num_chunks = get_compile_time_arg_val(4);
 
-    constexpr uint32_t qk_in0_block_w = get_compile_time_arg_val(7);
-    constexpr uint32_t qk_subblock_w = get_compile_time_arg_val(8);
-    constexpr uint32_t qk_subblock_h = get_compile_time_arg_val(9);
-    constexpr uint32_t qk_in0_num_subblocks = get_compile_time_arg_val(10);
-    constexpr uint32_t qk_in1_num_subblocks = get_compile_time_arg_val(11);
-    constexpr uint32_t qk_num_blocks = get_compile_time_arg_val(12);
-    constexpr uint32_t out_in0_block_w = get_compile_time_arg_val(13);
-    constexpr uint32_t out_subblock_w = get_compile_time_arg_val(14);
-    constexpr uint32_t out_subblock_h = get_compile_time_arg_val(15);
-    constexpr uint32_t out_in0_num_subblocks = get_compile_time_arg_val(16);
-    constexpr uint32_t out_in1_num_subblocks = get_compile_time_arg_val(17);
-    constexpr uint32_t out_num_blocks = get_compile_time_arg_val(18);
+    constexpr uint32_t qk_in0_block_w = get_compile_time_arg_val(5);
+    constexpr uint32_t qk_subblock_w = get_compile_time_arg_val(6);
+    constexpr uint32_t qk_subblock_h = get_compile_time_arg_val(7);
+    constexpr uint32_t qk_in0_num_subblocks = get_compile_time_arg_val(8);
+    constexpr uint32_t qk_in1_num_subblocks = get_compile_time_arg_val(9);
+    constexpr uint32_t out_in0_block_w = get_compile_time_arg_val(10);
+    constexpr uint32_t out_subblock_w = get_compile_time_arg_val(11);
+    constexpr uint32_t out_subblock_h = get_compile_time_arg_val(12);
+    constexpr uint32_t out_in0_num_subblocks = get_compile_time_arg_val(13);
+    constexpr uint32_t out_in1_num_subblocks = get_compile_time_arg_val(14);
 
-    constexpr bool use_joint_mask = get_compile_time_arg_val(19) == 1;
-    constexpr uint32_t mask_chunk_0 = get_compile_time_arg_val(20);
-    constexpr uint32_t mask_chunk_1 = get_compile_time_arg_val(21);
-    constexpr uint32_t scale_fp32 = get_compile_time_arg_val(22);
+    constexpr bool use_joint_mask = get_compile_time_arg_val(15) == 1;
+    constexpr uint32_t mask_chunk_0 = get_compile_time_arg_val(16);
+    constexpr uint32_t mask_chunk_1 = get_compile_time_arg_val(17);
+    constexpr uint32_t scale_fp32 = get_compile_time_arg_val(18);
 #ifdef SDPA_JOINT_STREAMING
-    constexpr bool use_streaming_compute = get_compile_time_arg_val(23) == 1;
-    constexpr uint32_t valid_Skt = get_compile_time_arg_val(24);
-    constexpr uint32_t k_partial_col = get_compile_time_arg_val(25);
-    constexpr uint32_t n_partial_col = get_compile_time_arg_val(26);
-    constexpr uint32_t mid_padded_tiles = get_compile_time_arg_val(27);
+    constexpr bool use_streaming_compute = get_compile_time_arg_val(19) == 1;
+    constexpr uint32_t valid_Skt = get_compile_time_arg_val(20);
+    constexpr uint32_t k_partial_col = get_compile_time_arg_val(21);
+    constexpr uint32_t n_partial_col = get_compile_time_arg_val(22);
+    constexpr uint32_t mid_padded_tiles = get_compile_time_arg_val(23);
 #endif
 
     uint32_t argidx = 0;
@@ -170,13 +166,11 @@ void kernel_main() {
                 qk_subblock_h,
                 qk_in0_num_subblocks,
                 qk_in1_num_subblocks,
-                qk_num_blocks,
                 out_in0_block_w,
                 out_subblock_w,
                 out_subblock_h,
                 out_in0_num_subblocks,
                 out_in1_num_subblocks,
-                out_num_blocks,
                 local_q_start,
                 local_q_end,
                 k_num_chunks,

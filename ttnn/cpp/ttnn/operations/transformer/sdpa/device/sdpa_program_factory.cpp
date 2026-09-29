@@ -32,7 +32,6 @@ namespace ttnn::prim {
 struct CoreHeadWork {
     uint32_t batch = 0;
     uint32_t head = 0;
-    uint32_t q_chunk_start = 0;
     uint32_t q_chunk_count = 0;
     uint32_t global_start = 0;  // flat index of the segment's first chunk
 };
@@ -56,7 +55,6 @@ struct CoreChainInfo {
     bool is_sink = false;
     uint32_t batch = 0;
     uint32_t head = 0;
-    uint32_t q_chunk_start = 0;
     uint32_t q_chunk_count = 0;
     CoreCoord prev_physical = CoreCoord{0, 0};
     CoreCoord next_physical = CoreCoord{0, 0};
@@ -64,7 +62,6 @@ struct CoreChainInfo {
     uint32_t prev_seg_global_start = 0;
     uint32_t prev_seg_count = 0;
     uint32_t next_seg_global_start = 0;
-    bool use_mcast = false;
     uint32_t mcast_num_dests = 0;    // num_dests for mcast API (includes self if injector inside rect)
     uint32_t mcast_sender_wait = 0;  // number of actual receivers that signal back (always chain_size - 1)
 };
@@ -327,7 +324,6 @@ void link_causal_chain(
         chain.is_sink = pos + 1 == end;
         chain.batch = hw.batch;
         chain.head = hw.head / heads_per_group;
-        chain.q_chunk_start = hw.q_chunk_start;
         chain.q_chunk_count = hw.q_chunk_count;
         if (pos > begin) {
             const auto& prev = segments[order[pos - 1]];
@@ -668,7 +664,7 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
         log_debug(tt::LogOp, "page_table_df: {}", page_table_df);
     }
 
-    IDevice* device = input_tensor_q.device();
+    MeshDevice* device = input_tensor_q.device();
 
     auto [math_fidelity, math_approx_mode, fp32_dest_acc_en, packer_l1_acc, dst_full_sync_en] =
         get_compute_kernel_config_args(device->arch(), compute_kernel_config);
@@ -704,7 +700,7 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
 
     // Global Q scheduling is the single-chip default: distribute the flat B*NQH*q_num_chunks
     // Q-chunk space evenly across cores. Pair-distribute when causal + even q_num_chunks so every
-    // core gets balanced light/heavy work after the shared zigzag remap (CT 31/24/34 to kernels).
+    // core gets balanced light/heavy work after the shared zigzag remap (reader/writer/compute CT 32/20/29).
     const uint32_t total_q_chunks = B * NQH * q_num_chunks;
     const bool global_q_pair_distribute = is_causal && (q_num_chunks % 2 == 0);
     uint32_t global_q_base_chunks_per_core = 0;
@@ -855,7 +851,6 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
 
     const uint32_t qk_in0_num_subblocks = Sq_chunk_t / qk_out_subblock_h;
     const uint32_t qk_in1_num_subblocks = Sk_chunk_t / qk_out_subblock_w;
-    const uint32_t qk_num_blocks = DHt / qk_in0_block_w;
 
     // now for out0
     const uint32_t out_in0_block_w = Sk_chunk_t;
@@ -865,7 +860,6 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
 
     const uint32_t out_in0_num_subblocks = Sq_chunk_t / out_out_subblock_h;
     const uint32_t out_in1_num_subblocks = vDHt / out_out_subblock_w;
-    const uint32_t out_num_blocks = Sk_chunk_t / out_in0_block_w;
 
     // Streaming: shrink cb_out to a 2-slot ping-pong (see sdpa_subblock_utils.hpp).
     if (use_streaming_compute) {
@@ -886,19 +880,16 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
     log_debug(tt::LogOp, "qk_out_subblock_h: {}", qk_out_subblock_h);
     log_debug(tt::LogOp, "qk_in0_num_subblocks: {}", qk_in0_num_subblocks);
     log_debug(tt::LogOp, "qk_in1_num_subblocks: {}", qk_in1_num_subblocks);
-    log_debug(tt::LogOp, "qk_num_blocks: {}", qk_num_blocks);
     log_debug(tt::LogOp, "out_in0_block_w: {}", out_in0_block_w);
     log_debug(tt::LogOp, "out_out_subblock_w: {}", out_out_subblock_w);
     log_debug(tt::LogOp, "out_out_subblock_h: {}", out_out_subblock_h);
     log_debug(tt::LogOp, "out_in0_num_subblocks: {}", out_in0_num_subblocks);
     log_debug(tt::LogOp, "out_in1_num_subblocks: {}", out_in1_num_subblocks);
-    log_debug(tt::LogOp, "out_num_blocks: {}", out_num_blocks);
 
     // Determine granularity for statistics computation
     // Each granularity must evenly divide its tile count to avoid dropping tiles
     const uint32_t stats_granularity = detail::find_valid_granularity(Sq_chunk_t, dst_size);
     const uint32_t sub_exp_granularity = detail::find_valid_granularity(Sk_chunk_t, dst_size);
-    const uint32_t mul_bcast_granularity = detail::find_valid_granularity(Sq_chunk_t * Sk_chunk_t, dst_size);
     // DHT_GRANULARITY is used in the kernel with both DHt and vDHt as the cols parameter,
     // so the granularity must evenly divide both to avoid dropping tiles.
     const uint32_t dht_granularity = compute_dht_granularity(DHt, vDHt, dst_size);
@@ -907,7 +898,6 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
     // Log these
     log_debug(tt::LogOp, "stats_granularity: {}", stats_granularity);
     log_debug(tt::LogOp, "sub_exp_granularity: {}", sub_exp_granularity);
-    log_debug(tt::LogOp, "mul_bcast_granularity: {}", mul_bcast_granularity);
     log_debug(tt::LogOp, "dht_granularity: {}", dht_granularity);
     log_debug(tt::LogOp, "reduce_granularity: {}", reduce_granularity);
 
@@ -924,7 +914,6 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
                                                       NQH,
                                                       NKH,
                                                       NVH,
-                                                      Sqt,
                                                       Skt,
                                                       valid_Sqt,
                                                       valid_Skt,
@@ -957,12 +946,12 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
     reader_compile_time_args.push_back(0);  // receiver_semaphore_id placeholder
     reader_compile_time_args.push_back(0);  // valid_semaphore_id placeholder
     reader_compile_time_args.push_back(0);  // mcast_enabled placeholder
-    reader_compile_time_args.push_back(static_cast<uint32_t>(use_zigzag_balancing));  // arg 33
-    reader_compile_time_args.push_back(static_cast<uint32_t>(is_windowed));           // arg 34: K-range narrowing
-    reader_compile_time_args.push_back(kv_chain_mode);  // arg 35: kv chain mode, 2 = causal prefix chains
-    reader_compile_time_args.push_back(static_cast<uint32_t>(use_mask_block_map));  // arg 36: mask block map
-    reader_compile_time_args.push_back(kv_slots);       // arg 37: K/V CB depth in chunks
-    reader_compile_time_args.push_back(0);              // arg 38: fwd_done_semaphore_id placeholder
+    reader_compile_time_args.push_back(static_cast<uint32_t>(use_zigzag_balancing));  // arg 32
+    reader_compile_time_args.push_back(static_cast<uint32_t>(is_windowed));           // arg 33: K-range narrowing
+    reader_compile_time_args.push_back(kv_chain_mode);  // arg 34: kv chain mode, 2 = causal prefix chains
+    reader_compile_time_args.push_back(static_cast<uint32_t>(use_mask_block_map));  // arg 35: mask block map
+    reader_compile_time_args.push_back(kv_slots);                                   // arg 36: K/V CB depth in chunks
+    reader_compile_time_args.push_back(0);  // arg 37: fwd_done_semaphore_id placeholder
 
     TensorAccessorArgs(input_tensor_q.buffer()).append_to(reader_compile_time_args);
     TensorAccessorArgs(input_tensor_k.buffer()).append_to(reader_compile_time_args);
@@ -1014,35 +1003,31 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
         // interleaved accessor args
         B,
         NQH,
-        NKH,
-        Sqt,
         valid_Sqt,
         Sk,
-        DHt,
         vDHt,
         Sq_chunk_t,
         q_num_chunks,
         Sk_chunk_t,
         k_num_chunks,
         packed_identity_scalar,
-        scale_packed,
         num_cores,
         static_cast<uint32_t>(is_causal),
         static_cast<uint32_t>(use_provided_mask),
         static_cast<uint32_t>(generated_padding_mask),
         static_cast<uint32_t>(is_chunked),
         sliding_window_size.value_or(0),
-        static_cast<uint32_t>(lightweight_mask),       // arg 20: lightweight mask
-        static_cast<uint32_t>(use_streaming_compute),  // arg 21: row-grouped cb_out drain
-        out_out_subblock_h,                            // arg 22: drain group height
-        k_partial_col,                                 // arg 23: K partial-tile col (0 = no partial)
-        static_cast<uint32_t>(use_zigzag_balancing),   // arg 24
-        static_cast<uint32_t>(is_windowed),            // arg 25: windowed block-diagonal mask generation
-        sender_semaphore_id,                           // arg 26: causal chains, the writer forwards K/V
-        receiver_semaphore_id,                         // arg 27
-        valid_semaphore_id,                            // arg 28
-        fwd_done_semaphore_id,                         // arg 29
-        kv_chain_mode,                                 // arg 30: 2 = causal prefix chains
+        static_cast<uint32_t>(lightweight_mask),       // arg 16: lightweight mask
+        static_cast<uint32_t>(use_streaming_compute),  // arg 17: row-grouped cb_out drain
+        out_out_subblock_h,                            // arg 18: drain group height
+        k_partial_col,                                 // arg 19: K partial-tile col (0 = no partial)
+        static_cast<uint32_t>(use_zigzag_balancing),   // arg 20
+        static_cast<uint32_t>(is_windowed),            // arg 21: windowed block-diagonal mask generation
+        sender_semaphore_id,                           // arg 22: causal chains, the writer forwards K/V
+        receiver_semaphore_id,                         // arg 23
+        valid_semaphore_id,                            // arg 24
+        fwd_done_semaphore_id,                         // arg 25
+        kv_chain_mode,                                 // arg 26: 2 = causal prefix chains
     };
 
     // out accessor, then the cu_window accessor chained right after it (before the CB-id block) so the
@@ -1055,9 +1040,6 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
 
     std::vector<uint32_t> compute_compile_time_args = {
         // matmul args
-        B,
-        NQH,
-        NKH,
         Skt,  // Padded K tile count — used by standard SDPA path for loop bounds
         DHt,
         vDHt,
@@ -1070,14 +1052,11 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
         qk_out_subblock_h,
         qk_in0_num_subblocks,
         qk_in1_num_subblocks,
-        qk_num_blocks,
         out_in0_block_w,
         out_out_subblock_w,
         out_out_subblock_h,
         out_in0_num_subblocks,
         out_in1_num_subblocks,
-        out_num_blocks,
-        num_cores,
         static_cast<uint32_t>(is_causal),
         static_cast<uint32_t>(compute_use_provided_mask),
         static_cast<uint32_t>(generated_padding_mask),
@@ -1085,17 +1064,16 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
         scale_packed,
         sliding_window_size.value_or(0),
         static_cast<std::uint32_t>(use_attention_sink),
-        static_cast<std::uint32_t>(use_streaming_compute),  // arg 30
-        valid_Skt,                                    // arg 31: unpadded K tile count for streaming padded_k_tiles
-        k_partial_col,                                // arg 32: K partial-tile col (0 = no partial)
-        static_cast<uint32_t>(use_zigzag_balancing),  // arg 33: unified zigzag remap
-        static_cast<uint32_t>(use_k_range_ctrl),      // arg 34: K-range narrowing (bounds from the ctrl CB)
+        static_cast<std::uint32_t>(use_streaming_compute),  // arg 26
+        valid_Skt,                                    // arg 27: unpadded K tile count for streaming padded_k_tiles
+        k_partial_col,                                // arg 28: K partial-tile col (0 = no partial)
+        static_cast<uint32_t>(use_zigzag_balancing),  // arg 29: unified zigzag remap
+        static_cast<uint32_t>(use_k_range_ctrl),      // arg 30: K-range narrowing (bounds from the ctrl CB)
     };
 
     std::map<std::string, std::string> defines_map;
     defines_map["STATS_GRANULARITY"] = std::to_string(stats_granularity);
     defines_map["SUB_EXP_GRANULARITY"] = std::to_string(sub_exp_granularity);
-    defines_map["MUL_BCAST_GRANULARITY"] = std::to_string(mul_bcast_granularity);
     defines_map["DHT_GRANULARITY"] = std::to_string(dht_granularity);
     defines_map["REDUCE_GRANULARITY"] = std::to_string(reduce_granularity);
     defines_map["EXP_APPROX_MODE"] = std::to_string(exp_approx_mode);
@@ -1323,24 +1301,22 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
             work.logical_core = core;
             work.physical_core = device->worker_core_from_logical_core(core);
 
-            auto push_head_work =
-                [&](uint32_t nb, uint32_t nh, uint32_t q_start, uint32_t q_count, uint32_t flat_start) {
-                    if (q_count == 0) {
-                        return;
-                    }
-                    work.head_work.push_back(CoreHeadWork{
-                        .batch = nb,
-                        .head = nh,
-                        .q_chunk_start = q_start,
-                        .q_chunk_count = q_count,
-                        .global_start = flat_start,
-                    });
-                    const uint32_t head_id = (nb * NQH) + nh;
-                    if (head_id < head_segments.size()) {
-                        head_segments[head_id].push_back(HeadSegmentRef{
-                            .core_idx = i, .head_work_index = static_cast<uint32_t>(work.head_work.size() - 1)});
-                    }
-                };
+            auto push_head_work = [&](uint32_t nb, uint32_t nh, uint32_t q_count, uint32_t flat_start) {
+                if (q_count == 0) {
+                    return;
+                }
+                work.head_work.push_back(CoreHeadWork{
+                    .batch = nb,
+                    .head = nh,
+                    .q_chunk_count = q_count,
+                    .global_start = flat_start,
+                });
+                const uint32_t head_id = (nb * NQH) + nh;
+                if (head_id < head_segments.size()) {
+                    head_segments[head_id].push_back(HeadSegmentRef{
+                        .core_idx = i, .head_work_index = static_cast<uint32_t>(work.head_work.size() - 1)});
+                }
+            };
 
             // Walk the core's [g_start, g_start + g_count) linear range and split into
             // contiguous (nb, nq, q_chunk_range) segments. Non-causal here (chain section is
@@ -1358,7 +1334,7 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
                 const uint32_t remaining_in_head = q_num_chunks - q_in_head;
                 const uint32_t remaining_in_range = g_end - cursor;
                 const uint32_t span = std::min(remaining_in_head, remaining_in_range);
-                push_head_work(nb, nq, q_in_head, span, cursor);
+                push_head_work(nb, nq, span, cursor);
                 cursor += span;
             }
 
@@ -1516,7 +1492,6 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
                 chain.participates = true;
                 chain.batch = hw.batch;
                 chain.head = hw.head;
-                chain.q_chunk_start = hw.q_chunk_start;
                 chain.q_chunk_count = hw.q_chunk_count;
 
                 if (pos == 0) {
@@ -1725,7 +1700,6 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
 
                 // Configure injector
                 auto& injector_chain = core_chain_info[injector_idx];
-                injector_chain.use_mcast = true;
                 injector_chain.prev_physical = rect_start;  // mcast rect start
                 injector_chain.next_physical = rect_end;    // mcast rect end
                 injector_chain.mcast_num_dests = mcast_num_dests;
@@ -1738,7 +1712,6 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
                         continue;
                     }
                     auto& receiver_chain = core_chain_info[ci];
-                    receiver_chain.use_mcast = true;
                     receiver_chain.prev_physical = core_work[injector_idx].physical_core;
                     receiver_chain.next_physical = CoreCoord{0, 0};
                     receiver_chain.next_core_q_chunks = 0;
@@ -1839,7 +1812,6 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
         reader_args.push_back(page_table_buffer);
         reader_args.push_back(attention_sink_buffer);
         reader_args.push_back(chunk_start_idx_buffer);
-        reader_args.push_back(i);
         reader_args.push_back(num_phases);
         reader_args.push_back(chunked_q_chunk_offset);
         reader_args.push_back(read_offset);  // read_offset
@@ -1851,8 +1823,6 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
             reader_args.push_back(static_cast<uint32_t>(chain.is_sink));
             reader_args.push_back(chain.batch);
             reader_args.push_back(chain.head);
-            reader_args.push_back(chain.q_chunk_start);
-            reader_args.push_back(chain.q_chunk_count);
             reader_args.push_back(static_cast<uint32_t>(chain.prev_physical.x));
             reader_args.push_back(static_cast<uint32_t>(chain.prev_physical.y));
             reader_args.push_back(static_cast<uint32_t>(chain.next_physical.x));
@@ -1866,7 +1836,7 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
         reader_args.push_back(global_q_start);
         reader_args.push_back(global_q_count);
 
-        // Windowed K-range narrowing tail: same four values the writer gets at slots 10-13, so the
+        // Windowed K-range narrowing tail: same four values the writer gets at slots 9-12, so the
         // reader resolves each Q chunk's global row range and windows identically.
         reader_args.push_back(cu_window_buffer);
         reader_args.push_back(cu_window_seqlens_eles);
@@ -1888,20 +1858,19 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
 
         KernelDescriptor::RTArgList writer_args;
         writer_args.push_back(out0_buffer);
-        writer_args.push_back(i);
-        writer_args.push_back(num_phases);                                       // 2
-        writer_args.push_back(static_cast<uint32_t>(flexible_chunked ? 1 : 0));  // 3
-        writer_args.push_back(chunked_q_chunk_offset);                           // 4: phase_1
-        writer_args.push_back(write_offset);                                     // 5
-        writer_args.push_back(0u);                        // 6: phase_2 chunk_start (unused, num_phases==1)
-        writer_args.push_back(0u);                        // 7: phase_2 write_offset (unused, num_phases==1)
-        writer_args.push_back(global_q_start);            // 8
-        writer_args.push_back(global_q_count);            // 9
-        writer_args.push_back(cu_window_buffer);          // 10: windowed mask src (nullptr if unused)
-        writer_args.push_back(cu_window_seqlens_eles);    // 11: window count + 1
-        writer_args.push_back(windowed_q_token_offset);   // 12: global origin of this Q shard (scalar)
-        writer_args.push_back(windowed_q_offset_buffer);  // 13: same, per-device (nullptr => use 12)
-        // Causal chain tail: the writer forwards K/V to the next core (parsed by the writer at 14..16).
+        writer_args.push_back(num_phases);                                       // 1
+        writer_args.push_back(static_cast<uint32_t>(flexible_chunked ? 1 : 0));  // 2
+        writer_args.push_back(chunked_q_chunk_offset);                           // 3: phase_1
+        writer_args.push_back(write_offset);                                     // 4
+        writer_args.push_back(0u);                        // 5: phase_2 chunk_start (unused, num_phases==1)
+        writer_args.push_back(0u);                        // 6: phase_2 write_offset (unused, num_phases==1)
+        writer_args.push_back(global_q_start);            // 7
+        writer_args.push_back(global_q_count);            // 8
+        writer_args.push_back(cu_window_buffer);          // 9: windowed mask src (nullptr if unused)
+        writer_args.push_back(cu_window_seqlens_eles);    // 10: window count + 1
+        writer_args.push_back(windowed_q_token_offset);   // 11: global origin of this Q shard (scalar)
+        writer_args.push_back(windowed_q_offset_buffer);  // 12: same, per-device (nullptr => use 11)
+        // Causal chain tail: the writer forwards K/V to the next core (parsed by the writer at 13..15).
         if (kv_chain_mode >= 2) {
             writer_args.push_back(static_cast<uint32_t>(chain.participates));
             writer_args.push_back(static_cast<uint32_t>(chain.next_physical.x));
@@ -1911,13 +1880,12 @@ ProgramDescriptor SDPAOperation::SDPAProgramFactory::create_descriptor(
 
         compute_desc.emplace_runtime_args(
             core,
-            {i,
-             num_phases,                                       // 1
-             static_cast<uint32_t>(flexible_chunked ? 1 : 0),  // 2
-             chunked_q_chunk_offset,                           // 3: phase_1
-             0u,                                               // 4: phase_2 chunked offset (unused, num_phases==1)
-             global_q_start,                                   // 5
-             global_q_count});                                 // 6
+            {num_phases,                                       // 0
+             static_cast<uint32_t>(flexible_chunked ? 1 : 0),  // 1
+             chunked_q_chunk_offset,                           // 2: phase_1
+             0u,                                               // 3: phase_2 chunked offset (unused, num_phases==1)
+             global_q_start,                                   // 4
+             global_q_count});                                 // 5
     }
 
     desc.kernels.push_back(std::move(reader_desc));
