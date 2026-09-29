@@ -40,7 +40,14 @@ import torch
 from safetensors import safe_open
 
 # The 5-layer module-level trace and the full-model depth trace.
-GOLDEN_ROOT = Path("/mnt/weka/model-cache/scratch/deepseek-ai/deepseek-prefill-cache/golden")
+#
+# STILL ON NFS, deliberately, while the checkpoints and the TTNN cache have moved to Weka. The Weka
+# copies under `model-cache/scratch/deepseek-ai/deepseek-prefill-cache/golden/` exist but do not
+# read back: `metadata.json` raises JSONDecodeError on char 0 and the row shards raise
+# "header too small" from safe_open, i.e. the files are there but empty or truncated (CI run
+# 36537053700). Note the failure mode if you retry the move -- a *missing* directory makes
+# `resolve_trace` return None and the tests skip green, so confirm the accuracy legs actually ran.
+GOLDEN_ROOT = Path("/mnt/models/deepseek-prefill-cache/golden")
 TRACE_100K = GOLDEN_ROOT / "structured_traces" / "kimi_k3_100k_vllm"
 TRACE_1M = GOLDEN_ROOT / "k3_vllm_code_debug_1M"
 

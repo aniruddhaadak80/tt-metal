@@ -73,7 +73,10 @@ class KimiK3Adapter(MLAPrefillAdapter):
     # full-depth golden — the 1M trace records decoder_output for layers 0..24 of 93 — so a runner
     # run cannot check end-to-end accuracy and must not pretend to. It is named here because the
     # runner reads the attribute unconditionally at config-print time.
-    prefill_trace_default = "/mnt/weka/model-cache/scratch/deepseek-ai/deepseek-prefill-cache/golden/k3_vllm_code_debug_1M"
+    # Both trace defaults stay on NFS while the checkpoints and TTNN cache have moved to Weka --
+    # the Weka golden copies read back empty or truncated. See the note on `GOLDEN_ROOT` in
+    # tests/kimi_k3/golden.py before moving them.
+    prefill_trace_default = "/mnt/models/deepseek-prefill-cache/golden/k3_vllm_code_debug_1M"
     # Loading the staged checkpoint wholesale needs an MXFP4 -> bf16 dequantizer that does not exist
     # yet, so the full-transformer fixtures stay skipped. The MoE gate is exempt: it is unquantized and read
     # through a prefix-filtered safe_open.
@@ -83,7 +86,7 @@ class KimiK3Adapter(MLAPrefillAdapter):
     # MLA alone is loadable: quantization_config.ignore covers self_attn, so those weights are bf16.
     # The first full-attention layer, not 0 -- layers 0-2 are KDA and hold no MLA tensors.
     pretrained_mla_layer = KimiK3Config.mla_layer_ids()[0]
-    mla_trace_defaults = ("/mnt/weka/model-cache/scratch/deepseek-ai/deepseek-prefill-cache/golden/structured_traces/kimi_k3_100k_vllm",)
+    mla_trace_defaults = ("/mnt/models/deepseek-prefill-cache/golden/structured_traces/kimi_k3_100k_vllm",)
     # Left as None: shared_path feeds conftest's state_dict fixture, which pytest would resolve --
     # loading all 1.5 TB -- before the supports_pretrained skip in the fixture body runs.
     shared_path = None
