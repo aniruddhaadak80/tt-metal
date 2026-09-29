@@ -518,7 +518,20 @@ DETERMINISM_REPS = 3
 # subprocess, no signposts and no ops-CSV re-parse -- it runs on the plain build (PR #49840).
 # Measured 2026-08-05 on bh_sc1_high_power (run 31010521345): 12.073 ms. Reads 4.4% above the Tracy
 # path's 11_562_468 as expected -- Tracy averages collectives across chips, this takes the max.
-K3_CHUNKED_RT_PERF_NS = 12_073_303
+#
+# Re-centred 2026-09-29 to 10,752,399 ns (run 36524165128), which tripped the LOWER edge. The cause
+# is identified rather than guessed: #57128 "Fuse MLA channel splits into head creation and KV
+# reduction" landed 2026-09-21T13:48, after that morning's nightly, and this is the first perf
+# sample on main since. Fusing the splits drops programs off the critical path, and the number is a
+# sum of per-program critical paths, so it moves the midpoint by construction.
+#
+# One sample, but the population it replaces was not noisy: the five nightlies 2026-09-17..09-21
+# read 11,895,049 / 11,814,997 / 11,930,980 / 11,844,543 / 11,908,130 ns (runs 35184045324,
+# 35309122445, 35422790757, 35490556003, 35562931923) -- 1.0% peak to peak, and all five already
+# sat below the old 12.073 midpoint, within 1.5% of the band's floor. The midpoint was stale before
+# the fusion; the fusion is what pushed it out. A midpoint that goes stale downward is fixed by
+# lowering it, never by widening the margin, so 3% is retained against a 1% observed spread.
+K3_CHUNKED_RT_PERF_NS = 10_752_399
 K3_CHUNKED_RT_PERF_MARGIN = 0.03
 
 

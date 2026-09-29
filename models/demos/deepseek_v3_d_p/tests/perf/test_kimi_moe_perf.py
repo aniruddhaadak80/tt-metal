@@ -103,6 +103,15 @@ class _MoEPerfCase:
 # 5,331,206 / 5,438,128 / 5,344,249 ns (jobs 108833542648, 108591989836, 108483307703), so this is a
 # 5.0% speedup against their median, not a short record window.
 #
+# 2026-09-29 (run 36524165128) read 3,967,248 ns and tripped the LOWER edge -- the first nightly to
+# carry #57850. DELIBERATELY NOT re-cut to it, per the rule above. A ~4.0 ms reading is not new and
+# does not track that PR: 2026-09-17 and 09-18 read 4,197,497 and 4,097,242 ns (runs 35184045324,
+# 35309122445) at the same 25-program count as the 09-19..09-21 runs that read 5.19-5.39 ms, i.e.
+# this shape already had a low mode ~22% under nominal while the code was unchanged. Program count
+# does not separate the two modes, so the "short record window" check in the comment above does not
+# explain it either. Re-cutting the midpoint onto the low mode would fail every nominal run.
+# Needed before touching this number: two or three more samples on main, and the mode identified.
+#
 # K2.7-Code is architecturally identical to K2.6 (61 layers, 384 routed experts, same dims), so the
 # MoE shapes are unchanged; only the label moved.
 _K2_7 = _MoEPerfCase(
