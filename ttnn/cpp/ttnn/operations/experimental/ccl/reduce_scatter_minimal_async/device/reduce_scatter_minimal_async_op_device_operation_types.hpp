@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
+
+#include <tt-metalium/runtime_args_data.hpp>
 #include <tt_stl/reflection.hpp>
 
 #include <cstdint>
@@ -19,16 +21,11 @@
 
 namespace ttnn::experimental::prim {
 
-// Shared struct for program artifacts - used for caching kernel handles and core info
+// Common argument bindings shared by standalone and fused CCL programs.
 struct ReduceScatterProgramArtifacts {
-    tt::tt_metal::KernelHandle reader_kernel_id;
-    tt::tt_metal::KernelHandle writer_kernel_id;
-    std::vector<tt::tt_metal::CoreCoord> all_cores;
-    uint32_t num_directions_per_link;
-    uint32_t num_workers_per_direction;
-    uint32_t num_mux_cores_per_direction_per_link;
-    uint32_t num_cores_per_link;
-    uint32_t normalized_dim;
+    // Cache the binding objects, not their payload pointers: dispatch may relocate data().
+    tt::tt_metal::RuntimeArgsData* reader_common_args;
+    tt::tt_metal::RuntimeArgsData* writer_common_args;
 };
 
 struct ReduceScatterMinimalAsyncParams {

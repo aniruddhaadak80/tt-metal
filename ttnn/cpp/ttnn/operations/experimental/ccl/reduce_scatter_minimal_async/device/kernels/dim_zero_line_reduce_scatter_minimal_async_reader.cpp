@@ -47,12 +47,13 @@ void kernel_main() {
     // ARGS
     ///////////////////////////////////////////////////
 
-    uint32_t arg_idx = 0;
+    // Preserve the per-core/fused argument layout; bindings live in common arguments.
+    uint32_t arg_idx = 4;
     // Load the input tensor spec
-    address_t input_tensor_address = get_arg_val<address_t>(arg_idx++);
-    address_t intermediate_tensor_address = get_arg_val<address_t>(arg_idx++);
-    address_t output_tensor_address = get_arg_val<address_t>(arg_idx++);
-    size_t out_ready_sem = get_arg_val<uint32_t>(arg_idx++);
+    address_t input_tensor_address = get_common_arg_val<address_t>(0);
+    address_t intermediate_tensor_address = get_common_arg_val<address_t>(1);
+    address_t output_tensor_address = get_common_arg_val<address_t>(2);
+    size_t out_ready_sem = get_common_arg_val<uint32_t>(5);
     Semaphore<> fwd_bwd_sem(get_arg_val<uint32_t>(arg_idx++));
     const bool is_forward = get_arg_val<uint32_t>(arg_idx++);
     const bool is_first_device_in_direction = get_arg_val<uint32_t>(arg_idx++);

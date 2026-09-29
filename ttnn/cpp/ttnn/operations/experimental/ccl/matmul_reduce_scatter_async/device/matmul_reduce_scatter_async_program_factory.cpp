@@ -155,16 +155,7 @@ void MatmulReduceScatterAsyncProgramFactory::override_runtime_arguments(
 
         // Call reduce scatter runtime arguments override directly using artifacts
         ttnn::experimental::prim::ring_reduce_scatter_minimal_async_helper_override_runtime_arguments(
-            program,
-            shared_vars.reduce_scatter_artifacts.reader_kernel_id,
-            shared_vars.reduce_scatter_artifacts.writer_kernel_id,
-            shared_vars.reduce_scatter_artifacts.all_cores,
-            args.reduce_scatter_params.num_links,
-            shared_vars.reduce_scatter_artifacts.num_directions_per_link,
-            shared_vars.reduce_scatter_artifacts.num_workers_per_direction,
-            shared_vars.reduce_scatter_artifacts.num_mux_cores_per_direction_per_link,
-            shared_vars.reduce_scatter_artifacts.num_cores_per_link,
-            shared_vars.reduce_scatter_artifacts.normalized_dim,
+            shared_vars.reduce_scatter_artifacts,
             args.reduce_scatter_params.barrier_semaphore,
             args.reduce_scatter_params.semaphore,
             output_tensors.mm,

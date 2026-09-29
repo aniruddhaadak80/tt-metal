@@ -265,14 +265,15 @@ void kernel_main() {
     // ARGS
     ///////////////////////////////////////////////////
 
-    uint32_t arg_idx = 0;
+    // Preserve the per-core/fused argument layout; bindings live in common arguments.
+    uint32_t arg_idx = 5;
     // Load the input tensor spec
-    address_t input_tensor_address = get_arg_val<address_t>(arg_idx++);
-    address_t interm_tensor_address = get_arg_val<address_t>(arg_idx++);
-    address_t output_tensor_address = get_arg_val<address_t>(arg_idx++);
-    size_t out_ready_sem = get_arg_val<uint32_t>(arg_idx++);
-    size_t out2_ready_sem = get_arg_val<uint32_t>(arg_idx++);  // out_ready_sem from opposite dir
+    address_t input_tensor_address = get_common_arg_val<address_t>(0);
+    address_t interm_tensor_address = get_common_arg_val<address_t>(1);
+    address_t output_tensor_address = get_common_arg_val<address_t>(2);
     const bool direction = get_arg_val<uint32_t>(arg_idx++);
+    size_t out_ready_sem = get_common_arg_val<uint32_t>(5 + direction);
+    size_t out2_ready_sem = get_common_arg_val<uint32_t>(5 + !direction);  // out_ready_sem from opposite dir
     const uint32_t chunks_per_sync = get_arg_val<uint32_t>(arg_idx++);
     const int32_t start_tiles_read = get_arg_val<uint32_t>(arg_idx++);
     const uint32_t start_tiles_to_read = get_arg_val<uint32_t>(arg_idx++);
@@ -287,7 +288,8 @@ void kernel_main() {
     // Chunk-paged layout only: staging buffer holding the 2nd-last iteration's direct-to-remote
     // contribution, read back as the 3rd term of the final iteration's local reduce. The tiled
     // layout reads that term from output_tensor instead and leaves this address at 0.
-    address_t penult_intermediate_tensor_address = get_arg_val<address_t>(arg_idx++);
+    ++arg_idx;  // Reserved binding slot; the address is now a common argument.
+    address_t penult_intermediate_tensor_address = get_common_arg_val<address_t>(3);
 
     constexpr uint32_t ct_idx = 0;
     constexpr auto input_tensor_args = TensorAccessorArgs<ct_idx>();

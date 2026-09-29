@@ -152,29 +152,19 @@ void ReduceScatterDeviceOperation::ReduceScatterProgram::override_runtime_argume
     const tensor_args_t& tensor_args,
     tensor_return_value_t& tensor_return_value) {
     const bool is_ring = operation_attributes.topology == ttnn::ccl::Topology::Ring;
-    for (auto& [range, program] : cached_workload.workload.get_programs()) {
+    for (const auto& [range, shared_variables] : cached_workload.shared_variables) {
         const auto& coord = range.start_coord();
         TT_FATAL(
             coord == range.end_coord(),
             "Expected single coordinate per program but got range of {} to {}",
             coord,
             range.end_coord());
-        const auto& shared_variables = cached_workload.shared_variables.at(range);
         // The two helpers no longer share a signature: the ring one also re-publishes the contiguous
         // staging path's penult intermediate address. This op never uses that path (see create_at), so it
         // passes nullopt — but the differing arity means these cannot be selected as a function pointer.
         if (is_ring) {
             ring_reduce_scatter_minimal_async_helper_override_runtime_arguments(
-                program,
-                shared_variables.program_artifacts.reader_kernel_id,
-                shared_variables.program_artifacts.writer_kernel_id,
-                shared_variables.program_artifacts.all_cores,
-                operation_attributes.num_links,
-                shared_variables.program_artifacts.num_directions_per_link,
-                shared_variables.program_artifacts.num_workers_per_direction,
-                shared_variables.program_artifacts.num_mux_cores_per_direction_per_link,
-                shared_variables.program_artifacts.num_cores_per_link,
-                shared_variables.program_artifacts.normalized_dim,
+                shared_variables.program_artifacts,
                 shared_variables.barrier_semaphore,
                 shared_variables.multidevice_semaphores,
                 tensor_args.input_tensor,
@@ -183,16 +173,7 @@ void ReduceScatterDeviceOperation::ReduceScatterProgram::override_runtime_argume
                 /*penult_intermediate=*/std::nullopt);
         } else {
             line_reduce_scatter_minimal_async_helper_override_runtime_arguments(
-                program,
-                shared_variables.program_artifacts.reader_kernel_id,
-                shared_variables.program_artifacts.writer_kernel_id,
-                shared_variables.program_artifacts.all_cores,
-                operation_attributes.num_links,
-                shared_variables.program_artifacts.num_directions_per_link,
-                shared_variables.program_artifacts.num_workers_per_direction,
-                shared_variables.program_artifacts.num_mux_cores_per_direction_per_link,
-                shared_variables.program_artifacts.num_cores_per_link,
-                shared_variables.program_artifacts.normalized_dim,
+                shared_variables.program_artifacts,
                 shared_variables.barrier_semaphore,
                 shared_variables.multidevice_semaphores,
                 tensor_args.input_tensor,

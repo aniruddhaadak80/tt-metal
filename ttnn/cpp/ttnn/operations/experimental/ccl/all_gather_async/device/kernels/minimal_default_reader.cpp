@@ -45,11 +45,12 @@ void kernel_main() {
     // RUNTIME ARGS
     ///////////////////////////////////////////////////
 
-    uint32_t arg_idx = 0;
-    address_t input_tensor_address = get_arg_val<address_t>(arg_idx++);
-    address_t output_tensor_address = get_arg_val<address_t>(arg_idx++);
-    size_t out_ready_sem = get_arg_val<uint32_t>(arg_idx++);
+    // Preserve the per-core/fused argument layout; bindings live in common arguments.
+    uint32_t arg_idx = 3;
+    address_t input_tensor_address = get_common_arg_val<address_t>(0);
+    address_t output_tensor_address = get_common_arg_val<address_t>(1);
     const bool direction = get_arg_val<uint32_t>(arg_idx++);  // 0 is forward, 1 is backward
+    size_t out_ready_sem = get_common_arg_val<uint32_t>(3 + direction);
     const auto input_tile_id_start = get_arg_val<uint32_t>(arg_idx++);
     const auto input_tile_id_end = get_arg_val<uint32_t>(arg_idx++);
     const auto start_pages_read_in_row = get_arg_val<uint32_t>(arg_idx++);

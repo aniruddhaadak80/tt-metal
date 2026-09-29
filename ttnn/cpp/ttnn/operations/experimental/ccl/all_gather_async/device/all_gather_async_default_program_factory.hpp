@@ -4,19 +4,17 @@
 
 #pragma once
 
+#include <tt-metalium/runtime_args_data.hpp>
+
 #include "all_gather_async_device_operation_types.hpp"
 #include "ttnn/device_operation.hpp"
 
 namespace ttnn::experimental::prim {
 
 struct AllGatherProgramArtifacts {
-    tt::tt_metal::KernelHandle reader_kernel_id{};
-    tt::tt_metal::KernelHandle writer_kernel_id{};
-    std::vector<tt::tt_metal::CoreCoord> all_cores;
-    uint32_t num_directions_per_link = 0;
-    uint32_t num_workers_per_direction = 0;
-    uint32_t num_mux_cores_per_direction_per_link = 0;
-    uint32_t num_cores_per_link = 0;
+    // Cache the binding objects, not their payload pointers: dispatch may relocate data().
+    tt::tt_metal::RuntimeArgsData* reader_common_args;
+    tt::tt_metal::RuntimeArgsData* writer_common_args;
 };
 
 struct DefaultMeshWorkloadFactory {
@@ -77,15 +75,7 @@ AllGatherProgramArtifacts build_all_gather_async_minimal_default_program_artifac
 
 // Runtime argument override function
 void all_gather_async_minimal_default_helper_override_runtime_arguments(
-    tt::tt_metal::Program& program,
-    tt::tt_metal::KernelHandle reader_kernel_id,
-    tt::tt_metal::KernelHandle writer_kernel_id,
-    const std::vector<tt::tt_metal::CoreCoord>& all_cores,
-    uint32_t num_links,
-    uint32_t num_directions_per_link,
-    uint32_t num_workers_per_direction,
-    uint32_t num_mux_cores_per_direction_per_link,
-    uint32_t num_cores_per_link,
+    const AllGatherProgramArtifacts& artifacts,
     const std::optional<GlobalSemaphore>& barrier_semaphore,
     const std::vector<GlobalSemaphore>& semaphore,
     const Tensor& input,

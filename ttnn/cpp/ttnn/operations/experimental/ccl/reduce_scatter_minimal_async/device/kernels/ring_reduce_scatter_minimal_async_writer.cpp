@@ -539,18 +539,22 @@ void kernel_main() {
     // ARGS
     ///////////////////////////////////////////////////
 
-    uint32_t arg_idx = 0;
-    address_t interm_tensor_address = get_arg_val<address_t>(arg_idx++);
-    address_t output_tensor_address = get_arg_val<address_t>(arg_idx++);
+    // Preserve the per-core/fused argument layout; bindings live in common arguments.
+    uint32_t arg_idx = 2;
+    address_t interm_tensor_address = get_common_arg_val<address_t>(1);
+    address_t output_tensor_address = get_common_arg_val<address_t>(2);
     const uint8_t this_core_x = get_arg_val<uint32_t>(arg_idx++);
     const uint8_t this_core_y = get_arg_val<uint32_t>(arg_idx++);
     uint32_t opposite_core_x = get_arg_val<uint32_t>(arg_idx++);
     uint32_t opposite_core_y = get_arg_val<uint32_t>(arg_idx++);
-    size_t out_ready_sem = get_arg_val<uint32_t>(arg_idx++);
-    [[maybe_unused]] size_t batch_ready_sem = get_arg_val<uint32_t>(arg_idx++);  // retained: fixed arg slot
+    ++arg_idx;  // Reserved binding slot; the address is now a common argument.
+    ++arg_idx;  // Reserved binding slot; the address is now a common argument.
+    [[maybe_unused]] size_t batch_ready_sem = get_common_arg_val<uint32_t>(7);  // retained: fixed arg slot
     bool use_barrier_sem = get_arg_val<uint32_t>(arg_idx++);
-    size_t barrier_sem = get_arg_val<uint32_t>(arg_idx++);
+    ++arg_idx;  // Reserved binding slot; the address is now a common argument.
+    size_t barrier_sem = get_common_arg_val<uint32_t>(4);
     const bool direction = get_arg_val<uint32_t>(arg_idx++);  // 1 is forward, 0 is backward
+    size_t out_ready_sem = get_common_arg_val<uint32_t>(5 + direction);
     const uint32_t chunks_per_sync = get_arg_val<uint32_t>(arg_idx++);
     const uint32_t start_pages_read_in_row = get_arg_val<uint32_t>(arg_idx++);
     const uint32_t start_row_offset = get_arg_val<uint32_t>(arg_idx++);
@@ -565,7 +569,8 @@ void kernel_main() {
     // Chunk-paged layout only: staging buffer for the 2nd-last iteration's direct-to-remote
     // contribution. The tiled layout scatter-writes that contribution into the remote output tensor
     // instead and leaves this address at 0.
-    address_t penult_intermediate_tensor_address = get_arg_val<address_t>(arg_idx++);
+    ++arg_idx;  // Reserved binding slot; the address is now a common argument.
+    address_t penult_intermediate_tensor_address = get_common_arg_val<address_t>(3);
 #ifdef USE_WORKER_MUX
     size_t mux_arg_idx = arg_idx;
     auto mux_sender = tt::tt_fabric::FabricMuxV2Sender</*EAGER_STAGING=*/true>::build_from_args(mux_arg_idx);

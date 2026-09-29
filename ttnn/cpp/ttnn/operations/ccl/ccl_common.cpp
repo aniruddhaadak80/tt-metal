@@ -5,6 +5,7 @@
 #include "ttnn/operations/ccl/ccl_common.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cmath>
 #include <set>
@@ -175,15 +176,42 @@ bool is_axis_wrap_wired(const tt::tt_metal::distributed::MeshDevice& mesh_device
         return false;
     }
 
-    // Axis 0 runs down a column, axis 1 along a row.
-    for (uint32_t row_or_col = 0; row_or_col < mesh_shape[1 - axis]; row_or_col++) {
-        const auto nodes = axis == 0 ? mesh_view.get_fabric_node_ids_on_column(row_or_col)
-                                     : mesh_view.get_fabric_node_ids_on_row(row_or_col);
-        if (tt::tt_fabric::get_neighbor_eth_directions(nodes.back(), nodes.front()).empty()) {
-            return false;
+    // Wiring is fixed for an open mesh, but reshape can change its boundary nodes.
+    // Keep one bounded entry per axis/thread, checking the unique mesh ID and the
+    // actual endpoints on every call. No device/view pointers survive mesh closure.
+    struct WrapCache {
+        int mesh_id = -1;
+        std::vector<std::pair<tt::tt_fabric::FabricNodeId, tt::tt_fabric::FabricNodeId>> endpoints;
+        std::optional<bool> wraps;
+    };
+    thread_local std::array<WrapCache, 2> caches;
+    auto& cache = caches.at(axis);
+    const auto num_lines = mesh_shape[1 - axis];
+    if (cache.mesh_id != mesh_device.id() || cache.endpoints.size() != num_lines) {
+        cache.mesh_id = mesh_device.id();
+        cache.endpoints.clear();
+        cache.endpoints.reserve(num_lines);
+        cache.wraps.reset();
+    }
+    for (uint32_t line = 0; line < num_lines; ++line) {
+        const MeshCoordinate first = axis == 0 ? MeshCoordinate(0, line) : MeshCoordinate(line, 0);
+        const MeshCoordinate last =
+            axis == 0 ? MeshCoordinate(mesh_shape[0] - 1, line) : MeshCoordinate(line, mesh_shape[1] - 1);
+        const auto endpoints = std::make_pair(mesh_view.get_fabric_node_id(last), mesh_view.get_fabric_node_id(first));
+        if (line == cache.endpoints.size()) {
+            cache.endpoints.push_back(endpoints);
+        } else if (cache.endpoints[line] != endpoints) {
+            cache.wraps.reset();
+            cache.endpoints[line] = endpoints;
         }
     }
-    return true;
+    if (!cache.wraps.has_value()) {
+        const bool wraps = std::all_of(cache.endpoints.begin(), cache.endpoints.end(), [](const auto& endpoints) {
+            return !tt::tt_fabric::get_neighbor_eth_directions(endpoints.first, endpoints.second).empty();
+        });
+        cache.wraps = wraps;
+    }
+    return *cache.wraps;
 }
 
 tt::tt_fabric::Topology get_axis_topology(
@@ -213,7 +241,7 @@ tt::tt_fabric::Topology get_usable_topology(
     const Tensor& tensor,
     const std::optional<tt::tt_fabric::Topology>& topology,
     const std::optional<uint32_t>& cluster_axis) {
-    tt::tt_fabric::Topology topology_ = topology.value_or(tt::tt_fabric::get_fabric_topology());
+    tt::tt_fabric::Topology topology_ = topology.has_value() ? *topology : tt::tt_fabric::get_fabric_topology();
     if (topology_ == tt::tt_fabric::Topology::Ring || topology_ == tt::tt_fabric::Topology::Torus) {
         bool wraps;
         if (cluster_axis.has_value()) {

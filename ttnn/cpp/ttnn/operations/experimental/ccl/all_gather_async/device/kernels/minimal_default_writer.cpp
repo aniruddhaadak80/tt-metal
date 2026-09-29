@@ -106,18 +106,21 @@ void kernel_main() {
     // RUNTIME ARGS
     ///////////////////////////////////////////////////
 
-    uint32_t arg_idx = 0;
-    address_t output_address = get_arg_val<address_t>(arg_idx++);
+    // Preserve the per-core/fused argument layout; bindings live in common arguments.
+    uint32_t arg_idx = 1;
+    address_t output_address = get_common_arg_val<address_t>(1);
     const uint8_t out_ready_sem_noc0_x = get_arg_val<uint32_t>(arg_idx++);
     const uint8_t out_ready_sem_noc0_y = get_arg_val<uint32_t>(arg_idx++);
-    size_t out_ready_sem = get_arg_val<uint32_t>(arg_idx++);
+    ++arg_idx;  // Reserved binding slot; the address is now a common argument.
 
     bool use_barrier_sem = get_arg_val<uint32_t>(arg_idx++);
-    size_t barrier_sem = get_arg_val<uint32_t>(arg_idx++);
+    ++arg_idx;  // Reserved binding slot; the address is now a common argument.
+    size_t barrier_sem = get_common_arg_val<uint32_t>(2);
     const uint8_t opposite_core_sem_noc0_x = get_arg_val<uint32_t>(arg_idx++);
     const uint8_t opposite_core_sem_noc0_y = get_arg_val<uint32_t>(arg_idx++);
 
     const bool direction = get_arg_val<uint32_t>(arg_idx++);  // 0 is forward, 1 is backward
+    size_t out_ready_sem = get_common_arg_val<uint32_t>(3 + direction);
     const auto input_tile_id_start = get_arg_val<uint32_t>(arg_idx++);
     const auto input_tile_id_end = get_arg_val<uint32_t>(arg_idx++);
     const auto start_pages_read_in_row = get_arg_val<uint32_t>(arg_idx++);

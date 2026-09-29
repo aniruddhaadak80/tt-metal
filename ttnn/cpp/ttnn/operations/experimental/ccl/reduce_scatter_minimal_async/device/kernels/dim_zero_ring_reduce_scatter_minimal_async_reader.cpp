@@ -37,12 +37,13 @@ void kernel_main() {
     // ARGS
     ///////////////////////////////////////////////////
 
-    uint32_t arg_idx = 0;
+    // Preserve the per-core/fused argument layout; bindings live in common arguments.
+    uint32_t arg_idx = 3;
     // Load the input tensor spec
-    address_t input_tensor_address = get_arg_val<address_t>(arg_idx++);
-    address_t intermediate_tensor_address = get_arg_val<address_t>(arg_idx++);
-    size_t out_ready_sem = get_arg_val<uint32_t>(arg_idx++);
+    address_t input_tensor_address = get_common_arg_val<address_t>(0);
+    address_t intermediate_tensor_address = get_common_arg_val<address_t>(1);
     const bool direction = get_arg_val<uint32_t>(arg_idx++);
+    size_t out_ready_sem = get_common_arg_val<uint32_t>(5 + direction);
     const uint32_t chunks_per_sync = get_arg_val<uint32_t>(arg_idx++);
     const int32_t start_tiles_read = get_arg_val<uint32_t>(arg_idx++);
     const uint32_t start_tiles_to_read = get_arg_val<uint32_t>(arg_idx++);

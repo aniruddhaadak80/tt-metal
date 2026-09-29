@@ -603,16 +603,21 @@ AllReduceAsyncMeshWorkloadFactory::cached_program_t AllReduceAsyncMeshWorkloadFa
             program, reduction_reader_kernel_id, output_corerangeset_per_link[link], reduction_reader_rt_args);
     }
 
-    return {
-        std::move(program),
-        shared_variables_t{
-            .worker_sender_reader_kernel_id = worker_sender_reader_kernel_id,
-            .worker_sender_writer_kernel_id = worker_sender_writer_kernel_id,
-            .reduction_reader_kernel_id = reduction_reader_kernel_id,
-            .sender_worker_cores = sender_worker_cores,
-            .output_tensor_cores = output_tensor_cores,
-            .cb_out = cb_out,
-            .cb_reduction = cb_reduction}};
+    shared_variables_t shared{};
+    shared.reader_args.reserve(sender_worker_cores.size());
+    shared.writer_args.reserve(sender_worker_cores.size());
+    for (const auto& core : sender_worker_cores) {
+        shared.reader_args.push_back(&GetRuntimeArgs(program, worker_sender_reader_kernel_id, core));
+        shared.writer_args.push_back(&GetRuntimeArgs(program, worker_sender_writer_kernel_id, core));
+    }
+    for (const auto& cr : output_tensor_cores.ranges()) {
+        for (const auto& core : corerange_to_cores(cr, std::nullopt, true)) {
+            shared.reduction_args.push_back(&GetRuntimeArgs(program, reduction_reader_kernel_id, core));
+        }
+    }
+    shared.cb_out = cb_out;
+    shared.cb_reduction = cb_reduction;
+    return {std::move(program), std::move(shared)};
 }
 
 void AllReduceAsyncMeshWorkloadFactory::override_runtime_arguments(
@@ -620,36 +625,20 @@ void AllReduceAsyncMeshWorkloadFactory::override_runtime_arguments(
     const AllReduceAsyncParams& operation_attributes,
     const AllReduceAsyncInputs& tensor_args,
     Tensor& output_tensor) {
-    // Update runtime arguments for each program in the mesh workload
+    const auto input_address = tensor_args.input_tensor.buffer()->address();
+    const auto semaphore_address = operation_attributes.semaphore.address();
     for (auto& [coordinate_range, program] : cached_workload.workload.get_programs()) {
-        auto& shared_vars = cached_workload.shared_variables.at(coordinate_range);
-
-        const auto& input_tensor = tensor_args.input_tensor;
-        const auto& buffer_tensor = tensor_args.buffer_tensor;
-
-        auto semaphore = operation_attributes.semaphore;
-
-        // update senders
-        auto& worker_reader_sender_runtime_args_by_core =
-            GetRuntimeArgs(program, shared_vars.worker_sender_reader_kernel_id);
-        auto& worker_writer_sender_runtime_args_by_core =
-            GetRuntimeArgs(program, shared_vars.worker_sender_writer_kernel_id);
-        auto& reduction_reader_runtime_args_by_core = GetRuntimeArgs(program, shared_vars.reduction_reader_kernel_id);
-        for (const auto& core : shared_vars.sender_worker_cores) {
-            // reader
-            auto& worker_reader_sender_runtime_args = worker_reader_sender_runtime_args_by_core[core.x][core.y];
-            worker_reader_sender_runtime_args[0] = input_tensor.buffer()->address();
-            // writer
-            auto& worker_writer_sender_runtime_args = worker_writer_sender_runtime_args_by_core[core.x][core.y];
-            worker_writer_sender_runtime_args[1] = semaphore.address();
+        const auto& shared = cached_workload.shared_variables.at(coordinate_range);
+        for (auto* args : shared.reader_args) {
+            args->data()[0] = input_address;
         }
-        UpdateDynamicCircularBufferAddress(program, shared_vars.cb_out, *output_tensor.buffer());
-        UpdateDynamicCircularBufferAddress(program, shared_vars.cb_reduction, *buffer_tensor.buffer());
-        for (const auto& cr : shared_vars.output_tensor_cores.ranges()) {
-            for (const auto& core : corerange_to_cores(cr, std::nullopt, true)) {
-                auto& reduction_reader_runtime_args = reduction_reader_runtime_args_by_core[core.x][core.y];
-                reduction_reader_runtime_args[2] = semaphore.address();
-            }
+        for (auto* args : shared.writer_args) {
+            args->data()[1] = semaphore_address;
+        }
+        UpdateDynamicCircularBufferAddress(program, shared.cb_out, *output_tensor.buffer());
+        UpdateDynamicCircularBufferAddress(program, shared.cb_reduction, *tensor_args.buffer_tensor.buffer());
+        for (auto* args : shared.reduction_args) {
+            args->data()[2] = semaphore_address;
         }
     }
 }

@@ -267,15 +267,7 @@ void AllGatherMatmulAsyncMeshWorkloadFactory::override_runtime_arguments(
         auto& all_gather_async_shared_variables = shared_vars.all_gather_async_shared_variables;
         const auto& all_gather_async_attributes = operation_attributes.all_gather_async_attributes;
         all_gather_async_minimal_default_helper_override_runtime_arguments(
-            program,
-            all_gather_async_shared_variables.reader_kernel_id,
-            all_gather_async_shared_variables.writer_kernel_id,
-            all_gather_async_shared_variables.all_cores,
-            all_gather_async_attributes.num_links,
-            all_gather_async_shared_variables.num_directions_per_link,
-            all_gather_async_shared_variables.num_workers_per_direction,
-            all_gather_async_shared_variables.num_mux_cores_per_direction_per_link,
-            all_gather_async_shared_variables.num_cores_per_link,
+            all_gather_async_shared_variables,
             all_gather_async_attributes.barrier_semaphore,
             all_gather_async_attributes.semaphore,
             tensor_args.input_tensor,
