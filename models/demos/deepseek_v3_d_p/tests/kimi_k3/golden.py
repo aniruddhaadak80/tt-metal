@@ -136,8 +136,17 @@ def resolve_trace(default: Path) -> GoldenTrace | None:
 
 
 def resolve_checkpoint() -> Path | None:
-    """The Kimi-K3 checkpoint named by `$KIMI_K3_HF_MODEL` / `$KIMI_K3_CKPT`, if it has an index."""
-    for var in ("KIMI_K3_HF_MODEL", "KIMI_K3_CKPT"):
+    """The Kimi-K3 checkpoint named by `$KIMI_K3_CKPT` / `$KIMI_K3_HF_MODEL`, if it has an index.
+
+    `$KIMI_K3_CKPT` is tried FIRST and the order is load-bearing. These callers read tensors, and
+    the two variables no longer name the same directory: since the move to Weka, `$KIMI_K3_HF_MODEL`
+    is the published MXFP4 checkpoint and `$KIMI_K3_CKPT` the dequantized bf16 export. MXFP4 stores
+    routed experts quantized, so its index carries no `...experts.N.w{1,2,3}.weight` and
+    `load_tensors` dies with "index is missing 2688 weights" -- which is exactly what happened when
+    HF_MODEL was preferred. Whatever needs the published checkpoint (the MoE gate's router, the one
+    unquantized MoE tensor group) reads `$KIMI_K3_HF_MODEL` directly and is unaffected.
+    """
+    for var in ("KIMI_K3_CKPT", "KIMI_K3_HF_MODEL"):
         value = os.getenv(var)
         if value and (Path(value) / "model.safetensors.index.json").is_file():
             return Path(value)
