@@ -42,7 +42,9 @@ from safetensors import safe_open
 
 # The 5-layer module-level trace and the full-model depth trace.
 #
-# STILL ON NFS, deliberately, while the checkpoints and the TTNN cache have moved to Weka. The Weka
+# STILL ON NFS, deliberately, along with the bf16 export `$KIMI_K3_CKPT` names -- that Weka copy
+# has no `model.safetensors.index.json`, so `resolve_checkpoint` skipped it and fell through to
+# MXFP4 (run 36546139689). Only the MXFP4 checkpoint and the TTNN cache are on Weka today. The Weka
 # copies under `model-cache/scratch/deepseek-ai/deepseek-prefill-cache/golden/` exist but do not
 # read back: `metadata.json` raises JSONDecodeError on char 0 and the row shards raise
 # "header too small" from safe_open, i.e. the files are there but empty or truncated (CI run
