@@ -406,9 +406,12 @@ tt::tt_metal::ProgramDescriptor UnaryDeviceOperation::ProgramFactory::create_des
     const bool math_approx_mode = false;
     std::map<std::string, std::string> unary_defines = get_block_defines(ops_chain, "0", "0", input.dtype());
 #if !defined(TT_POLY_LLK_DISABLE)
-    if (ops_chain.size() == 1 && input.dtype() == DataType::BFLOAT16 && output.dtype() == DataType::BFLOAT16 &&
-        !operation_attributes.fp32_dest_acc_en && !operation_attributes.preserve_fp32_precision &&
-        ops_chain[0].type() == UnaryOpType::ERFC &&
+    const bool tt_poly_bf16_unary_context_eligible =
+        ops_chain.size() == 1 && input.dtype() == DataType::BFLOAT16 && output.dtype() == DataType::BFLOAT16 &&
+        !operation_attributes.fp32_dest_acc_en && !operation_attributes.preserve_fp32_precision;
+#endif
+#if !defined(TT_POLY_LLK_DISABLE)
+    if (tt_poly_bf16_unary_context_eligible && ops_chain[0].type() == UnaryOpType::ERFC &&
         (unary_defines.at("SFPU_OP_CHAIN_0_INIT_0") == "erfc_tt_poly_bf16_tile_init();" ||
          unary_defines.at("SFPU_OP_CHAIN_0_INIT_0") == "erfc_tt_poly_bf16_tile_init<false>();") &&
         (input.device()->arch() == tt::ARCH::BLACKHOLE || input.device()->arch() == tt::ARCH::WORMHOLE_B0)) {
@@ -417,9 +420,7 @@ tt::tt_metal::ProgramDescriptor UnaryDeviceOperation::ProgramFactory::create_des
     }
 #endif
 #if !defined(TT_POLY_LLK_DISABLE)
-    if (ops_chain.size() == 1 && input.dtype() == DataType::BFLOAT16 && output.dtype() == DataType::BFLOAT16 &&
-        !operation_attributes.fp32_dest_acc_en && !operation_attributes.preserve_fp32_precision &&
-        ops_chain[0].type() == UnaryOpType::ERF &&
+    if (tt_poly_bf16_unary_context_eligible && ops_chain[0].type() == UnaryOpType::ERF &&
         (unary_defines.at("SFPU_OP_CHAIN_0_INIT_0") == "erf_tt_poly_bf16_tile_init();" ||
          unary_defines.at("SFPU_OP_CHAIN_0_INIT_0") == "erf_tt_poly_bf16_tile_init<false>();") &&
         (input.device()->arch() == tt::ARCH::BLACKHOLE || input.device()->arch() == tt::ARCH::WORMHOLE_B0)) {
