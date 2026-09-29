@@ -534,7 +534,9 @@ _ULP_REPORT: bool = False
 _ULP_MEASURE_PATH: Optional[str] = None
 
 
-def _record_ulp_measurement(distance, *, mask, output_data_format) -> None:
+def _record_ulp_measurement(
+    distance, *, mask, output_data_format, nonfinite: int = 0
+) -> None:
     """Append the worst measurable lane of one comparison, tagged with its variant.
 
     ``ulp_stats`` rather than a bare ``max()``, so the number is the one the log
@@ -563,6 +565,9 @@ def _record_ulp_measurement(distance, *, mask, output_data_format) -> None:
         "dest": getattr(dest, "name", None),
         # `lanes` and `unmeasurable` too: max 0 over 0 lanes is not a bit-exact cell.
         **{k: stats[k] for k in ("max", "lanes", "unmeasurable")},
+        # Lanes the hardware answered inf/NaN where the golden is finite. A step count
+        # cannot describe them, so they ride alongside it for the headroom report.
+        "nonfinite": int(nonfinite),
     }
     with open(_ULP_MEASURE_PATH, "a", encoding="utf-8") as handle:
         handle.write(json.dumps(row) + "\n")
