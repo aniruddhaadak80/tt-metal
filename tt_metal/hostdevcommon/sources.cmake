@@ -7,6 +7,9 @@ set(HOSTDEVCOMMON_JIT_API_HEADERS
     api/hostdevcommon/flags.hpp
     api/hostdevcommon/fabric_common.h
     api/hostdevcommon/tensor_accessor/arg_config.hpp
+    api/hostdevcommon/uva.h
+    api/hostdevcommon/uva_frame.h
+    api/hostdevcommon/uva_layout.h
 )
 
 # streaming_profiler_common.h is deliberately absent: it includes hostdev/profiler_common.h, which is only on
