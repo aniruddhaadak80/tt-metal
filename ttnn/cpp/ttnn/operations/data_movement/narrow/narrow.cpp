@@ -238,9 +238,13 @@ ttnn::Tensor narrow(
             }
         }
 
-        // Create new core grid
+        // Create new core grid. CoreRangeSet(filtered_cores) merges cores row-wise, which matches ROW_MAJOR order.
+        // Block sharding requires a single rectangular grid, and its filtered cores always form a full rectangle,
+        // so merging is safe there for either orientation. For other COL_MAJOR layouts keep one range per core so
+        // the grid expands (column-wise) to exactly filtered_cores, in sync with the actual buffer placement.
         CoreRangeSet new_core_grid;
-        if (shard_spec_buffer.orientation() == ShardOrientation::ROW_MAJOR) {
+        if (shard_spec_buffer.orientation() == ShardOrientation::ROW_MAJOR ||
+            input_tensor.memory_config().memory_layout() == TensorMemoryLayout::BLOCK_SHARDED) {
             new_core_grid = CoreRangeSet(filtered_cores);
         } else {
             std::vector<CoreRange> core_ranges;
@@ -248,7 +252,7 @@ ttnn::Tensor narrow(
             for (const auto& core : filtered_cores) {
                 core_ranges.push_back(CoreRange(core));
             }
-            new_core_grid = CoreRangeSet(core_ranges);
+            new_core_grid = CoreRangeSet(std::move(core_ranges));
         }
 
         // Update tensor shape in pages
