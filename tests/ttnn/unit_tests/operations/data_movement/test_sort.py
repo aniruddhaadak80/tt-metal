@@ -190,11 +190,10 @@ def test_sort_long_tensor(shape, dim, descending, device):
         assert_equal(torch_sort_values, ttnn.to_torch(ttnn_sort_values))
 
 
-def _sort_fp32_wide(descending, device):
+def _sort_fp32_wide(descending, device, n=151936, fill=float("-inf")):
     # A few finite logits in a sea of -inf, as in masked vocab-size logits.
     torch.manual_seed(0)
-    n = 151936
-    input = torch.full((1, n), float("-inf"), dtype=torch.float32)
+    input = torch.full((1, n), fill, dtype=torch.float32)
     input[..., torch.randperm(n)[:328]] = torch.randn(328) * 8.0
 
     ttnn_input = ttnn.from_torch(input, ttnn.float32, layout=ttnn.Layout.TILE, device=device)
@@ -213,30 +212,21 @@ def test_sort_fp32_wide_values(descending, device):
 
 
 @pytest.mark.parametrize(
-    "descending",
+    "n, descending, fill",
     [
-        False,
-        # Descending order pads the row with -inf, which ties with real -inf
-        # entries and can emit padding indices (>= n) into the output on the
-        # MultiCore DRAM factory. Non-strict: on grids where this padded width
-        # lands on the CrossCore factory instead (e.g. an unharvested 8x8 WH
-        # grid), the index-aware comparator keeps padding entries in place and
-        # the test passes.
-        pytest.param(
-            True,
-            marks=pytest.mark.xfail(
-                strict=False,
-                reason="https://github.com/tenstorrent/tt-metal/issues/53326: padding indices leak",
-            ),
-        ),
+        (151936, False, float("-inf")),
+        (151936, True, float("-inf")),
+        # #53326: W=524288 exceeds CrossCore capacity on any grid, so these run on the
+        # MultiCore DRAM factory, where real ±inf ties with the ±inf padding.
+        (300000, True, float("-inf")),
+        (300000, False, float("inf")),
     ],
 )
-def test_sort_fp32_wide_index_correctness(descending, device):
+def test_sort_fp32_wide_index_correctness(n, descending, fill, device):
     # Ties make exact torch index parity undefined, so check invariants instead:
     # indices form a valid permutation and gather back the sorted values.
-    input, ttnn_sort_values, ttnn_sort_indices = _sort_fp32_wide(descending, device)
+    input, ttnn_sort_values, ttnn_sort_indices = _sort_fp32_wide(descending, device, n, fill)
 
-    n = input.shape[-1]
     values = ttnn.to_torch(ttnn_sort_values)
     indices = ttnn.to_torch(ttnn_sort_indices).reshape(-1).to(torch.int64)
 
