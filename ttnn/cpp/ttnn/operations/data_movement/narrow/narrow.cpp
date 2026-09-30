@@ -239,9 +239,11 @@ ttnn::Tensor narrow(
         }
 
         // Create new core grid. CoreRangeSet(filtered_cores) merges cores row-wise, which matches ROW_MAJOR order.
-        // Block sharding requires a single rectangular grid, and its filtered cores always form a full rectangle,
-        // so merging is safe there for either orientation. For other COL_MAJOR layouts keep one range per core so
-        // the grid expands (column-wise) to exactly filtered_cores, in sync with the actual buffer placement.
+        // Block sharding requires a single rectangular grid, so merge there for either orientation. This assumes the
+        // filtered cores form a rectangle, which does not hold for every case (e.g. a batched tensor narrowed on a
+        // non-last dim can select strided shard rows; that is a pre-existing limitation for both orientations).
+        // For other COL_MAJOR layouts keep one range per core so the grid expands (column-wise) to exactly
+        // filtered_cores, in sync with the actual buffer placement.
         CoreRangeSet new_core_grid;
         if (shard_spec_buffer.orientation() == ShardOrientation::ROW_MAJOR ||
             input_tensor.memory_config().memory_layout() == TensorMemoryLayout::BLOCK_SHARDED) {
