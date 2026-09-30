@@ -1696,8 +1696,8 @@
   sp_config: sc4
 
 
-# Separate launcher from the verifier legs above: the drafter path is not trace-captured, so this one runs
-# PREFILL_USE_TRACE=0 and its 250k timing is not comparable to theirs. PCC stops at 55k, where the golden does.
+# Separate launcher from the verifier legs above: the drafter runs inside the same traced chunk forward, so its
+# 250k timing includes drafter work and is not comparable to theirs. PCC stops at 55k, where the golden does.
 - name: "(Kimi-K2.7-1T) DFlash drafter KV accuracy 55k@5k + perf 250k@5k, SC4"
   cmd: |
     set -euo pipefail
