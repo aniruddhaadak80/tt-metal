@@ -140,21 +140,39 @@ def _chunk_slice(pool, actual_start: int, actual_isl=None):
     return _pool_slice(pool, actual_start, CHUNK_SIZE, actual_isl)
 
 
-def _h2d_rows(tokens):
+def _rotated_row_positions(actual_start: int) -> list:
+    """Global position of each chip's H2D row entries once the device rotates a chunk starting at
+    ``actual_start``: deepseek_v3_d_p's ``rotated_chip_positions``, inlined because importing it loads
+    that whole package."""
+    sp = GLOBAL_MESH_SHAPE[0]
+    stride = h2d_row_len(CHUNK_SIZE, sp)
+    slab, seam_chip, offset = actual_start // CHUNK_SIZE, (actual_start // stride) % sp, actual_start % stride
+    rows = []
+    for c in range(sp):
+        first = (slab + 1) * stride if c < seam_chip else slab * stride + (offset if c == seam_chip else 0)
+        rows.append([(lr // stride) * CHUNK_SIZE + c * stride + lr % stride for lr in range(first, first + stride)])
+    return rows
+
+
+def _h2d_rows(tokens, actual_start: int = 0):
     sp = GLOBAL_MESH_SHAPE[0]
     stride = h2d_row_len(CHUNK_SIZE, sp)
     assert len(tokens) == CHUNK_SIZE, f"expected {CHUNK_SIZE} tokens, got {len(tokens)}"
-    return _to_host_array(torch.tensor(tokens, dtype=torch.int64).view(sp, 1, stride))
+    ids = torch.tensor(tokens, dtype=torch.int64)
+    if MTP_LEVELS and actual_start % CHUNK_SIZE:
+        ids = ids[[p - actual_start for row in _rotated_row_positions(actual_start) for p in row]]
+    return _to_host_array(ids.view(sp, 1, stride))
 
 
 def _mtp_rows(pool, actual_start: int, actual_isl=None):
     n_mtp = num_mtp_tokens(MTP_LEVELS)
     if not n_mtp:
         return None
-    sp = GLOBAL_MESH_SHAPE[0]
-    stride = h2d_row_len(CHUNK_SIZE, sp)
     align_pad = [MTP_PAD_TOKEN_ID] * (n_mtp - MTP_LEVELS)
-    rows = [_pool_slice(pool, actual_start + (c + 1) * stride, MTP_LEVELS, actual_isl) + align_pad for c in range(sp)]
+    rows = [
+        _pool_slice(pool, row[-1] + 1, MTP_LEVELS, actual_isl) + align_pad
+        for row in _rotated_row_positions(actual_start)
+    ]
     return _to_host_array(torch.tensor(rows, dtype=torch.int64).unsqueeze(1))
 
 
@@ -1562,7 +1580,13 @@ def main() -> None:
         metadata = _pack_metadata(slot_id, actual_start, actual_end)
         logger.info(f"[producer] push slot={slot_id} cidx={chunk_idx} start={actual_start} end={actual_end}")
         push_start = time.perf_counter()
-        _push(service, payload_bytes, _h2d_rows(tokens), _mtp_rows(pool, actual_start, actual_isl), metadata)
+        _push(
+            service,
+            payload_bytes,
+            _h2d_rows(tokens, actual_start),
+            _mtp_rows(pool, actual_start, actual_isl),
+            metadata,
+        )
         return (time.perf_counter() - push_start) * 1000.0
 
     warmup_chunks = int(os.environ.get("PREFILL_PRODUCER_WARMUP_CHUNKS", "0"))
