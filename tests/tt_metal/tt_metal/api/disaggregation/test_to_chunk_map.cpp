@@ -9,9 +9,14 @@
 #include <cstdint>
 #include <vector>
 
+#include <tt_stl/small_vector.hpp>
+#include <tt-metalium/buffer_types.hpp>
+#include <tt-metalium/core_coord.hpp>
+#include <tt-metalium/mesh_coord.hpp>
 #include <tt-metalium/shape.hpp>
 #include <tt-metalium/tensor/tensor_types.hpp>
 #include <tt-metalium/tensor/spec/layout/tensor_layout.hpp>
+#include <tt-metalium/tensor/spec/memory_config/memory_config.hpp>
 #include <tt-metalium/tensor/spec/tensor_spec.hpp>
 
 #include "internal/disaggregation/kv_layout_spec.hpp"
@@ -21,19 +26,42 @@
 namespace tt::tt_metal::internal::disaggregation {
 namespace {
 
-// These tests drive the ONE `to_chunk_map` factory with REAL tt-metal TensorSpecs and compare the
-// resulting KvChunkAddressTable against a C++ port of blaze's migration-path arithmetic (the same
-// reference the device-free kv_layout_spec_smoke scripts use). CPU-only; no device required.
+using tt::tt_metal::distributed::MeshCoordinate;
+using tt::tt_metal::distributed::MeshMapperConfig;
+using tt::tt_metal::distributed::MeshShape;
+
+// These tests drive the ONE `to_chunk_map` factory with REAL ND-sharded tt-metal TensorSpecs +
+// host-side TensorTopology (no MeshDevice), and compare the resulting KvChunkAddressTable against a C++
+// port of blaze's migration-path arithmetic (the same reference the device-free kv_layout_spec_smoke
+// scripts use). The addresser reads the seq axis + feature width off the tensor's NdShardSpec and the
+// mesh geometry + device coords off the TensorTopology; only the op/engine policy is passed explicitly.
+// CPU-only; no device required.
 
 constexpr uint32_t kTileLocal = 32;
 constexpr uint32_t kBfp8TileBytesLocal = 1088;
+constexpr uint32_t kNumBanks = 8;
 
-// Build a real bfloat8_b, TILE-layout, DRAM-interleaved TensorSpec of the given logical shape.
-TensorSpec make_bfp8_dram_spec(const Shape& shape) {
+// Build a real bfloat8_b, TILE-layout, DRAM ND-sharded TensorSpec. `shard_shape` tiles the seq axis at
+// the 32-token DRAM block and leaves the feature axis full-width (the layout the addresser reads back).
+TensorSpec make_bfp8_ndshard_spec(const Shape& shape, const Shape& shard_shape) {
     auto page_config = PageConfig(Layout::TILE);
-    auto memory_config = MemoryConfig{TensorMemoryLayout::INTERLEAVED, BufferType::DRAM};
+    CoreRangeSet grid(CoreRange(CoreCoord(0, 0), CoreCoord(kNumBanks - 1, 0)));
+    NdShardSpec nd{shard_shape, grid, ShardOrientation::ROW_MAJOR, ShardDistributionStrategy::ROUND_ROBIN_1D};
+    auto memory_config = MemoryConfig(BufferType::DRAM, nd);
     auto tensor_layout = TensorLayout(DataType::BFLOAT8_B, page_config, memory_config);
     return TensorSpec(shape, tensor_layout);
+}
+
+// Full row-major device-coordinate list for a 2D mesh (the addresser linearizes coords itself; this
+// just satisfies the TensorTopology ctor).
+std::vector<MeshCoordinate> row_major_coords(uint32_t rows, uint32_t cols) {
+    std::vector<MeshCoordinate> coords;
+    for (uint32_t r = 0; r < rows; ++r) {
+        for (uint32_t c = 0; c < cols; ++c) {
+            coords.emplace_back(r, c);
+        }
+    }
+    return coords;
 }
 
 uint32_t bfp8_chunk_bytes(uint32_t tokens_per_chunk, uint64_t feature_dim) {
@@ -119,31 +147,32 @@ TEST(ToChunkMap, CPU_MlaShardMatchesMigrationReference) {
     const uint64_t base = 0x1000'0000ull;
     const uint32_t per_dev = max_seq_len / sp_dim;
 
-    // Real TensorSpec: (slot, F, seq), seq axis = 2. Round feature/seq to tile multiples.
-    KvLayoutSpec spec{.tensor = make_bfp8_dram_spec(Shape{num_slots, static_cast<uint32_t>(F), max_seq_len})};
-    spec.seq_axis = SeqAxis{2};
+    // Real ND-sharded TensorSpec: (slot, F, seq), seq axis = 2, tiled [1, F, 32].
+    KvLayoutSpec spec{
+        .tensor = make_bfp8_ndshard_spec(
+            Shape{num_slots, static_cast<uint32_t>(F), max_seq_len}, Shape{1, static_cast<uint32_t>(F), kTileLocal})};
     spec.temporal = temporal::Dense{};
-    spec.distribution.per_axis = {Replicate{}, Replicate{}, Shard{.mesh_axis = MeshAxis{0}}};
-    spec.mem_layout.bank_order = BankOrder::Optimal;
-    spec.mem_layout.bank_scheme = BankScheme::MlaShard;
-    spec.mem_layout.k_chunk_size = KChunkSize{k_chunk};
-    spec.mem_layout.chunk_n_tokens = ChunkTokens{chunk_n_tokens};
     spec.addressing = AddressingMode::Slot;
-    spec.sp_dim = SpDim{sp_dim};
-    spec.mesh_cols = MeshCols{mesh_cols};
-    spec.device_chunk_size = DeviceChunkSize{device_chunk_size};
 
-    // Verify inner_footprint excludes the batch/slot axis (axis 0) and the seq axis -> F.
-    EXPECT_EQ(spec.inner_footprint().get(), F);
+    // seq axis + feature width are derived from the tensor's NdShardSpec.
+    EXPECT_EQ(spec.sequence_axis().value(), 2u);
+    EXPECT_EQ(feature_width(spec.tensor), F);
 
-    MapGeometry geom;
-    geom.num_layers = 1;
-    geom.num_slots = num_slots;
-    geom.max_seq_len = max_seq_len;
-    geom.position_step = chunk_n_tokens;
-    geom.base_addr = base;
+    // Topology: 4x2 mesh, seq (tensor dim 2) sharded on mesh axis 0, replicated across mesh axis 1.
+    ttsl::SmallVector<MeshMapperConfig::Placement> placements = {
+        MeshMapperConfig::Shard{.dim = 2}, MeshMapperConfig::Replicate{}};
+    TensorTopology topology(MeshShape{sp_dim, mesh_cols}, placements, row_major_coords(sp_dim, mesh_cols));
 
-    auto table = to_chunk_map({spec}, geom);
+    GenerationPolicy policy;
+    policy.bank_scheme = BankScheme::MlaShard;
+    policy.bank_order = BankOrder::Optimal;
+    policy.k_chunk_size = KChunkSize{k_chunk};
+    policy.device_chunk_size = DeviceChunkSize{device_chunk_size};
+
+    CacheConfig config{.spec = spec, .topology = topology, .policy = policy, .base_addr = base};
+    MapGeometry geom{.num_layers = 1, .num_slots = num_slots, .max_seq_len = max_seq_len, .position_step = chunk_n_tokens};
+
+    auto table = to_chunk_map({config}, kNumBanks, tt::tt_fabric::MeshId{0}, geom);
 
     uint32_t checked = 0;
     for (uint32_t slot = 0; slot < num_slots; ++slot) {
@@ -182,32 +211,32 @@ TEST(ToChunkMap, CPU_GqaCyclicMatchesReference) {
     const uint32_t sk_chunk_t = sdpa_k_chunk / kTileLocal;
     const uint32_t st_pb = (max_seq_len / kTileLocal) / bph;
 
-    KvLayoutSpec spec{.tensor = make_bfp8_dram_spec(
-                          Shape{num_slots, n_kv_heads, max_seq_len, static_cast<uint32_t>(head_dim)})};
-    spec.seq_axis = SeqAxis{2};
+    // Real ND-sharded TensorSpec: (slot, head, seq, head_dim), seq axis = 2, tiled [1, 1, 32, head_dim].
+    KvLayoutSpec spec{
+        .tensor = make_bfp8_ndshard_spec(
+            Shape{num_slots, n_kv_heads, max_seq_len, static_cast<uint32_t>(head_dim)},
+            Shape{1, 1, kTileLocal, static_cast<uint32_t>(head_dim)})};
     spec.temporal = temporal::Dense{};
-    spec.distribution.per_axis = {Replicate{}, Shard{.mesh_axis = MeshAxis{1}}, Replicate{}, Replicate{}};
-    spec.mem_layout.bank_order = BankOrder::Optimal;
-    spec.mem_layout.bank_scheme = BankScheme::Cyclic;
-    spec.mem_layout.k_chunk_size = KChunkSize{sdpa_k_chunk};
-    spec.mem_layout.chunk_n_tokens = ChunkTokens{kTileLocal};
-    spec.mem_layout.banks_per_head = BanksPerHead{bph};
     spec.addressing = AddressingMode::Slot;
-    spec.sp_dim = SpDim{1};
-    spec.mesh_cols = MeshCols{n_kv_heads};
-    spec.head_shard_axis = HeadShardAxis{1};
 
-    // inner_footprint excludes batch axis (0), head-shard axis (1) and seq axis (2) -> head_dim.
-    EXPECT_EQ(spec.inner_footprint().get(), head_dim);
+    EXPECT_EQ(spec.sequence_axis().value(), 2u);
+    EXPECT_EQ(feature_width(spec.tensor), head_dim);
 
-    MapGeometry geom;
-    geom.num_layers = 1;
-    geom.num_slots = num_slots;
-    geom.max_seq_len = max_seq_len;
-    geom.position_step = kTileLocal;
-    geom.base_addr = base;
+    // Topology: 1x8 mesh, head (tensor dim 1) sharded on mesh axis 1, seq replicated (sp_dim == 1).
+    ttsl::SmallVector<MeshMapperConfig::Placement> placements = {
+        MeshMapperConfig::Replicate{}, MeshMapperConfig::Shard{.dim = 1}};
+    TensorTopology topology(MeshShape{1, n_kv_heads}, placements, row_major_coords(1, n_kv_heads));
 
-    auto table = to_chunk_map({spec}, geom);
+    GenerationPolicy policy;
+    policy.bank_scheme = BankScheme::Cyclic;
+    policy.bank_order = BankOrder::Optimal;
+    policy.k_chunk_size = KChunkSize{sdpa_k_chunk};
+    policy.banks_per_head = BanksPerHead{bph};
+
+    CacheConfig config{.spec = spec, .topology = topology, .policy = policy, .base_addr = base};
+    MapGeometry geom{.num_layers = 1, .num_slots = num_slots, .max_seq_len = max_seq_len, .position_step = kTileLocal};
+
+    auto table = to_chunk_map({config}, kNumBanks, tt::tt_fabric::MeshId{0}, geom);
 
     const bool cyclic = true;
     uint32_t checked = 0;

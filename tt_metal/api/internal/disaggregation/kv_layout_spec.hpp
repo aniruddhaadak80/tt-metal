@@ -6,9 +6,7 @@
 
 #include <array>
 #include <cstdint>
-#include <map>
 #include <optional>
-#include <set>
 #include <variant>
 #include <vector>
 
@@ -19,72 +17,54 @@ namespace tt::tt_metal::internal::disaggregation {
 
 // KvLayoutSpec — the model-facing, declarative definition of ONE cached KV/state tensor.
 //
-// It is the "common language" a model uses to specify its KV cache layout (see README consumer
-// #1); the migration, tiering, and weights services consume it. It answers *what a tensor is* and
-// *how it is addressed* — deliberately residence-agnostic. Deriving physical addresses from it (the
-// old per-model `locate`), the sender/receiver resharding planner, and tiering are downstream KV
-// Manager concerns, not part of this definition.
+// It is the "common language" a model uses to specify its KV cache layout; migration, tiering, and
+// weights services consume it. Deliberately RESIDENCE-AGNOSTIC: it answers *what a tensor is* and
+// *how its sequence coordinate is interpreted*. Deriving physical addresses (the old per-model
+// `locate` / to_chunk_map), the resharding planner, and tiering are downstream KV Manager concerns.
 //
-// A spec composes four independent parts over one native `TensorSpec`:
-//   (1) TemporalPolicy — how the universal `prefix_len` coordinate is interpreted for this tensor
-//   (2) Distribution   — per-tensor-axis placement onto the device mesh
-//   (3) MemLayout      — intra-device physical layout (DRAM bank ordering)
-//   (4) AddressingMode — slot-direct vs. paged (block-table) indirection
+// DESIGN — why this is small. A KV tensor is already almost fully described by a native distributed
+// `TensorSpec`. The mesh tensor carries:
+//   * shape + dtype                         -> TensorLayout
+//   * intra-device bank striping            -> MemoryConfig / NdShardSpec (shard_shape, grid,
+//                                              orientation, shard_distribution_strategy)
+//   * mesh placement + device coords        -> TensorTopology (per-axis Shard/Replicate, MeshShape,
+//                                              get_device_coord() -> replica / device groups)
+// So this spec adds ONLY what the tensor cannot carry:
+//   (1) how the sequence coordinate is interpreted  -> TemporalPolicy (which ALSO says whether a
+//                                                      sequence axis exists: Rolling/None have none)
+//   (2) slot-direct vs paged addressing             -> AddressingMode
+// WHICH axis is the sequence is NOT stored: the allocation enforces that the sequence axis is the
+// token-block-tiled NdShardSpec axis, so it is derived from the tensor (see sequence_axis()).
 //
-// Each part varies independently: a new attention/mixer type is a new TemporalPolicy, a new
-// parallelization is a new Distribution — neither touches the others.
+// Everything mesh/bank/shard-flavoured is READ OFF the tensor, never re-declared here. The earlier
+// skeleton's Distribution part duplicated TensorTopology::placements(); its SpDim/MeshCols/MeshRows
+// duplicated the TensorTopology MeshShape; its GqaGroup/head_shard_axis/idx_cp were placement facts
+// already in the topology; its MemLayout.{chunk_n_tokens,num_banks,bf16_chunk_bytes,bank_order}
+// duplicated NdShardSpec / the device dram grid / the tensor dtype. All removed.
 //
-// SKELETON: the parts and their fields are established here; behaviour (e.g. inner_footprint()
-// derivation, validation, the named-parallelism lowering) is filled in incrementally.
+// Generation-policy scalars that genuinely are NOT in the tensor (they live in the flash op /
+// migration / prefill engine) are inputs to the DOWNSTREAM addresser, not part of this definition —
+// see GenerationPolicy below.
 
 // ---------------------------------------------------------------------------------------------
 // Strong types — semantic values that must never be interchanged (see cpp coding standards).
 // ---------------------------------------------------------------------------------------------
 
-// Index of the sequence (temporal) axis within the tensor's logical shape.
-using SeqAxis = ttsl::StrongType<uint32_t, struct SeqAxisTag>;
-// Index of an axis of the device mesh (a Shard target).
-using MeshAxis = ttsl::StrongType<uint32_t, struct MeshAxisTag>;
 // Sliding-window width W, in tokens.
 using WindowTokens = ttsl::StrongType<uint32_t, struct WindowTokensTag>;
-// Block-/chunk-local attention span, in tokens.
-using ChunkTokens = ttsl::StrongType<uint32_t, struct ChunkTokensTag>;
+// The span of one block-local ATTENTION chunk, in tokens (temporal::BlockLocal). A retention semantic,
+// NOT a layout quantity — distinct from the DRAM/flash "chunk" strides (KChunkSize, DeviceChunkSize,
+// and chunk_size_bytes' token-block granule), which is why it has its own name.
+using BlockLocalSpan = ttsl::StrongType<uint32_t, struct BlockLocalSpanTag>;
 // Depth of a conv / token-shift rolling ring: kernel_size - 1 inputs retained.
 using RollingWidth = ttsl::StrongType<uint32_t, struct RollingWidthTag>;
-// F — the per-token inner footprint: the FEATURE width, product of the non-sequence axis extents
-// EXCLUDING the leading batch/slot axis and the head-shard axis (both are placement/paging concerns,
-// not part of the per-token footprint). When there is no sequence axis (recurrent / conv summaries)
-// this is the whole per-slot state size.
-using InnerFootprint = ttsl::StrongType<uint64_t, struct InnerFootprintTag>;
-
-// Index of the tensor axis carrying the attention head (the head-shard axis), when a scheme fans a
-// tensor out over heads across the mesh (BLOCK/CYCLIC GQA). Excluded from F.
-using HeadShardAxis = ttsl::StrongType<uint32_t, struct HeadShardAxisTag>;
-// CP (context-parallel) stride: tokens each sequence-shard device owns per round before the seq axis
-// rotates to the next device. Lives in the flash op / migration path, not the allocated TensorSpec.
-using DeviceChunkSize = ttsl::StrongType<uint32_t, struct DeviceChunkSizeTag>;
-// Origin offset of the first sequence-shard (CP) device on the mesh axis.
-using SpOrigin = ttsl::StrongType<uint32_t, struct SpOriginTag>;
-// K-chunk (DRAM page / block) size, in tokens — the flash op's effective SDPA k-chunk / block_size.
-using KChunkSize = ttsl::StrongType<uint32_t, struct KChunkSizeTag>;
-// Number of DRAM banks a single head/group fans out over (BLOCK / CYCLIC height-sharding).
-using BanksPerHead = ttsl::StrongType<uint32_t, struct BanksPerHeadTag>;
-// index_k column-split degree (BLOCK_CYCLIC): how many devices a sparse-index row is split across.
-using IdxCp = ttsl::StrongType<uint32_t, struct IdxCpTag>;
-// GQA group index -> mesh ROW block (BLOCK K/V per-group placement).
-using GqaGroup = ttsl::StrongType<uint32_t, struct GqaGroupTag>;
-// Extent of the sequence-shard (CP) mesh axis.
-using SpDim = ttsl::StrongType<uint32_t, struct SpDimTag>;
-// Mesh column count (TP fan-out).
-using MeshCols = ttsl::StrongType<uint32_t, struct MeshColsTag>;
-// Mesh row count.
-using MeshRows = ttsl::StrongType<uint32_t, struct MeshRowsTag>;
 // A layer index within the model.
 using LayerIndex = ttsl::StrongType<uint32_t, struct LayerIndexTag>;
 
 // ---------------------------------------------------------------------------------------------
 // (1) TemporalPolicy — retention window over the prefix, keyed by the universal `prefix_len`.
-// Each alternative fixes (extent, address-map, update) for the tensor's sequence dimension.
+// THE irreducible semantic: nothing in TensorSpec / TensorTopology / NdShardSpec encodes attention
+// or recurrence temporality. Each alternative fixes (extent, address-map, update) for the sequence.
 // ---------------------------------------------------------------------------------------------
 namespace temporal {
 
@@ -98,7 +78,7 @@ struct Window {
 
 // The current chunk only; resets at chunk boundaries (not a trailing window). Llama-4 iRoPE local.
 struct BlockLocal {
-    ChunkTokens chunk;
+    BlockLocalSpan span;
 };
 
 // The last (width) inputs — a tiny conv / token-shift ring. Mamba conv1d, RWKV token-shift.
@@ -125,80 +105,7 @@ using TemporalPolicy = std::variant<
     temporal::None>;
 
 // ---------------------------------------------------------------------------------------------
-// (2) Distribution — placement of each logical tensor axis onto the device mesh. Named
-// parallelisms (TP/PP/DP/SP/EP) lower to this: "shard tensor dim X onto mesh axis Y, or replicate".
-// Only Shard/Replicate matter for a stored tensor; collectives are a compute concern.
-// ---------------------------------------------------------------------------------------------
-
-// This tensor axis is sharded across the given mesh axis.
-struct Shard {
-    MeshAxis mesh_axis;
-};
-
-// This tensor axis is replicated (same bytes on every device along its mesh axes). MLA latent /
-// MQA use this on the head axis.
-struct Replicate {};
-
-using AxisPlacement = std::variant<Shard, Replicate>;
-
-// One placement per logical tensor axis, index-aligned with the TensorSpec's logical shape.
-struct Distribution {
-    std::vector<AxisPlacement> per_axis;
-};
-
-// ---------------------------------------------------------------------------------------------
-// (3) MemLayout — intra-device physical layout. The TensorSpec's MemoryConfig already implies the
-// bank striping (interleaved / NdShardSpec); this selects the bank ordering permutation.
-// ---------------------------------------------------------------------------------------------
-
-enum class BankOrder : uint8_t {
-    Identity = 0,  // portable round-robin (page_id % num_banks)
-    Optimal = 1,   // NOC-local permutation co-locating each bank with its consuming cores
-};
-
-// How a chunk index maps to a (bank, per-bank offset). GENERATION POLICY the allocated TensorSpec
-// does not carry — it comes from the flash op / migration path (see kv_layout_spec_smoke/README).
-//   Natural      page grows monotonically; bank = page_id % num_banks; per-slot pages stack.
-//   MlaShard     shard_id = slot*chunks_per_slot + local_chunk; bank = perm[shard_id % banks];
-//                per-bank offset stacks by shard_id / banks. (MLA latent cache)
-//   Block        height-sharded per head/group; bank_order[base + tile_row / st_pb].
-//   Cyclic       bank_order[base + (tile_row / sk_chunk_t) % bph]; within stacks by chunk.
-//   BlockCyclic  round-robin blocks over banks; bank_order[global_block % num_banks]. (index_k)
-enum class BankScheme : uint8_t {
-    Natural = 0,
-    MlaShard = 1,
-    Block = 2,
-    Cyclic = 3,
-    BlockCyclic = 4,
-};
-
-// The OPTIMAL DRAM bank permutation (NOC-local ordering); index i -> physical bank id.
-inline constexpr std::array<uint32_t, 8> kOptimalDramBankOrder = {1, 3, 2, 0, 5, 7, 6, 4};
-inline constexpr uint32_t kNumDramBanks = 8;
-inline constexpr uint32_t kTile = 32;
-inline constexpr uint32_t kBfp8TileBytes = 1088;  // 32x32 bfloat8_b tile
-inline constexpr uint32_t kBf16Bytes = 2;
-
-struct MemLayout {
-    BankOrder bank_order = BankOrder::Optimal;
-    BankScheme bank_scheme = BankScheme::Natural;
-
-    // Generation-policy fields (not derivable from the allocated tensor).
-    KChunkSize k_chunk_size{128};    // tokens per DRAM page / block
-    ChunkTokens chunk_n_tokens{kTile};  // migration granule (tokens per chunk)
-    uint32_t num_banks = kNumDramBanks;
-    uint32_t num_blocks = kNumDramBanks;         // permutation block count (OPTIMAL indexer)
-    BanksPerHead banks_per_head{kNumDramBanks};  // BLOCK/CYCLIC per-head fan-out
-
-    // Element sizing: bfp8 (tiled) chunks vs bf16 (dense) chunks.
-    bool bf16_chunk_bytes = false;  // false => bfp8 tiled sizing
-};
-
-// chunk_size_bytes for one (tokens_per_chunk x feature_dim) chunk under the layout's dtype sizing.
-uint32_t chunk_size_bytes(const MemLayout& mem, uint32_t tokens_per_chunk, uint64_t feature_dim);
-
-// ---------------------------------------------------------------------------------------------
-// (4) AddressingMode — how a logical position resolves to a physical slot.
+// (2) AddressingMode — how a logical position resolves to a physical slot.
 // ---------------------------------------------------------------------------------------------
 
 enum class AddressingMode : uint8_t {
@@ -207,49 +114,118 @@ enum class AddressingMode : uint8_t {
 };
 
 // ---------------------------------------------------------------------------------------------
-// The composed spec.
+// The composed spec — the tensor plus the three things the tensor cannot carry.
 // ---------------------------------------------------------------------------------------------
 
 struct KvLayoutSpec {
-    // The logical tensor: shape + dtype + layout + memory config. The sequence axis is OPTIONAL —
-    // present for attention (Dense/Window/BlockLocal/Static), absent for recurrent/conv summaries
-    // (Rolling/None), which have no per-token dimension.
+    // The logical tensor as a native distributed mesh TensorSpec. Carries shape + dtype +
+    // MemoryConfig/NdShardSpec (intra-device bank striping) + TensorTopology (mesh placement, extents,
+    // device coords). Distribution, mesh geometry, and bank layout are read from HERE, not re-declared.
     TensorSpec tensor;
-    std::optional<SeqAxis> seq_axis;
 
+    // How the sequence coordinate is interpreted (part 1). ALSO encodes whether a sequence axis exists
+    // at all: Rolling/None are fixed-size recurrent/conv summaries with no per-token axis.
     TemporalPolicy temporal;
-    Distribution distribution;
-    MemLayout mem_layout;
+
+    // Slot-direct vs paged (block-table) indirection (part 2).
     AddressingMode addressing = AddressingMode::Slot;
 
-    // Mesh-axis extents + CP context (generation policy; not carried by the allocated TensorSpec).
-    SpDim sp_dim{1};        // extent of the seq-shard (CP) mesh axis
-    MeshCols mesh_cols{1};
-    MeshRows mesh_rows{1};
-    SpOrigin sp_origin{0};
-    // CP stride on Shard(seq). When unset, defaults to k_chunk_size * num_banks.
-    std::optional<DeviceChunkSize> device_chunk_size;
-    IdxCp idx_cp{1};  // index_k column-split degree (BLOCK_CYCLIC)
+    // Whether this tensor has a per-token sequence axis — read from `temporal`, not stored.
+    bool has_sequence() const {
+        return !std::holds_alternative<temporal::Rolling>(temporal) &&
+               !std::holds_alternative<temporal::None>(temporal);
+    }
 
-    // Placement helpers.
-    std::optional<GqaGroup> group;               // GQA group -> mesh ROW block (BLOCK K/V)
-    std::optional<HeadShardAxis> head_shard_axis;  // tensor axis carrying head (BLOCK/CYCLIC per-head)
-
-    // Per-layer overrides + applicability. `layers` empty => resident on every enumerated layer.
-    std::set<uint32_t> layers;
-    std::map<uint32_t, TemporalPolicy> temporal_by_layer;
-    std::map<uint32_t, BankScheme> bank_scheme_by_layer;
-    std::map<uint32_t, KChunkSize> k_chunk_by_layer;
-
-    bool applies_to_layer(uint32_t layer) const { return layers.empty() || layers.count(layer) != 0; }
-
-    // Whether this tensor has a per-token sequence axis (attention family) vs. is a fixed-size
-    // summary (recurrent / conv).
-    bool has_sequence() const { return seq_axis.has_value(); }
-
-    // F — the per-token FEATURE width: product of the non-sequence axis extents EXCLUDING the leading
-    // batch/slot axis and the head-shard axis. Derived from `tensor`, `seq_axis`, `head_shard_axis`.
-    InnerFootprint inner_footprint() const;
+    // The sequence (temporal) axis index into `tensor`'s logical shape, DERIVED from the tensor: the
+    // token-block-tiled NdShardSpec axis (shard granule == the DRAM token block and < its extent).
+    // nullopt when !has_sequence(). The allocation enforces this tiling, so the axis is recoverable
+    // without being declared (a plain shape-dim index, like metal's own NdShardSpec / MeshMapper dims).
+    std::optional<uint32_t> sequence_axis() const;
 };
+
+// A model's KV cache is an ORDERED LIST of co-resident specs (K/V, indexer, one per layer-type).
+// Per-layer heterogeneity (e.g. gpt-oss sliding vs full layers) is expressed as DISTINCT specs — each
+// layer-type is its own tensor with its own TensorSpec/TemporalPolicy — replacing the earlier
+// per-layer {temporal,bank_scheme,k_chunk}_by_layer override maps on a single spec.
+using KvCacheModel = std::vector<KvLayoutSpec>;
+
+// ---------------------------------------------------------------------------------------------
+// GenerationPolicy — inputs the DOWNSTREAM addresser (to_chunk_map) needs that the tensor genuinely
+// cannot carry because they live in the flash op / migration / prefill engine, NOT the allocated
+// tensor. Deliberately OUTSIDE KvLayoutSpec (which is residence-agnostic): these are passed to the
+// address derivation alongside the spec and the tensor's TensorTopology.
+// ---------------------------------------------------------------------------------------------
+
+// The sequence-shard (CP) stride, in tokens: how many tokens each seq-shard device owns per round
+// before the sequence rotates to the next device. Residence-NEUTRAL — decode's CP round-robin and the
+// prefill block-cyclic per-device window are the same quantity (the prefill compute-chunk period is
+// just this * the seq-shard mesh extent, so it is NOT a separate field). Lives in the flash op /
+// migration / prefill engine, not the tensor.
+using DeviceChunkSize = ttsl::StrongType<uint32_t, struct DeviceChunkSizeTag>;
+// K-chunk (flash op block) size, in tokens — the effective SDPA k-chunk / block_size.
+using KChunkSize = ttsl::StrongType<uint32_t, struct KChunkSizeTag>;
+// Number of DRAM banks a single head/group fans out over (BLOCK / CYCLIC height-sharding).
+using BanksPerHead = ttsl::StrongType<uint32_t, struct BanksPerHeadTag>;
+// Origin offset of the first sequence-shard (CP) device on the mesh axis.
+using SpOrigin = ttsl::StrongType<uint32_t, struct SpOriginTag>;
+// index_k column-split degree (BLOCK_CYCLIC): how many devices a sparse-index row is split across.
+using IdxCp = ttsl::StrongType<uint32_t, struct IdxCpTag>;
+// GQA group index -> mesh ROW block (BLOCK K/V per-group placement).
+using GqaGroup = ttsl::StrongType<uint32_t, struct GqaGroupTag>;
+
+// DRAM / tile constants (device + dtype facts the addresser needs; not stored on the spec).
+inline constexpr std::array<uint32_t, 8> kOptimalDramBankOrder = {1, 3, 2, 0, 5, 7, 6, 4};
+inline constexpr uint32_t kNumDramBanks = 8;
+inline constexpr uint32_t kTile = 32;
+inline constexpr uint32_t kBfp8TileBytes = 1088;  // 32x32 bfloat8_b tile
+inline constexpr uint32_t kBf16Bytes = 2;
+
+// Bank ordering permutation: the OPTIMAL NOC-local order, or the portable identity round-robin. A
+// generation-policy selector (which permutation the flash op / migration used), not a tensor property.
+enum class BankOrder : uint8_t {
+    Identity = 0,  // portable round-robin (page_id % num_banks)
+    Optimal = 1,   // NOC-local permutation co-locating each bank with its consuming cores
+};
+
+// How a chunk index maps to (bank, per-bank offset). The round-robin cases (Natural / BlockCyclic)
+// coincide with the tensor's NdShardSpec::shard_distribution_strategy; MlaShard / Block / Cyclic carry
+// op-specific arithmetic beyond it. A derivation selector, not a tensor property — and residence-neutral:
+// the prefill write layout IS BlockCyclic with the block ordinal = the tensor's ND-shard row-major ravel
+// (which folds the user-major [num_users*num_layers] batch axis). It is not a distinct scheme.
+enum class BankScheme : uint8_t {
+    Natural = 0,
+    MlaShard = 1,
+    Block = 2,
+    Cyclic = 3,
+    BlockCyclic = 4,
+};
+
+struct GenerationPolicy {
+    BankScheme bank_scheme = BankScheme::Natural;
+    BankOrder bank_order = BankOrder::Optimal;
+    KChunkSize k_chunk_size{128};
+    // Seq-shard (CP) stride; default k_chunk_size * num_banks. For the prefill write layout this is the
+    // per-device window (compute-chunk period / seq-shard mesh extent) — same field, no prefill variant.
+    std::optional<DeviceChunkSize> device_chunk_size;
+    BanksPerHead banks_per_head{kNumDramBanks};  // BLOCK/CYCLIC per-head fan-out
+    uint32_t num_blocks = kNumDramBanks;         // OPTIMAL indexer permutation block count
+    SpOrigin sp_origin{0};                       // CP device origin on the seq-shard mesh axis
+    IdxCp idx_cp{1};                             // index_k column-split (BLOCK_CYCLIC)
+    std::optional<GqaGroup> group;               // GQA group -> mesh ROW block (BLOCK K/V)
+    // num_banks and the mesh geometry (sp_dim / mesh cols/rows / head-shard axis / device coords) are
+    // NOT fields here: num_banks is a device fact (dram grid), the geometry is read from the tensor's
+    // TensorTopology, and the seq axis + feature width from its NdShardSpec.
+};
+
+// Bytes for one chunk of `tokens_per_chunk` tokens. The feature width and dtype sizing are read from
+// the tensor (NdShardSpec shard_shape's full-width axes + TensorLayout) — no feature_dim arg, no sizing
+// flag. When tokens_per_chunk == the shard's seq granule this is exactly metal's NdShard shard/page
+// byte size; other granules scale it linearly. (No stored InnerFootprint: F is the shard feature width.)
+uint32_t chunk_size_bytes(const TensorSpec& tensor, uint32_t tokens_per_chunk);
+
+// F — the per-token FEATURE width, derived from the tensor: the product of the NdShardSpec shard_shape
+// axes that span their full logical extent (the seq axis is tiled at the token block; batch/head axes
+// have granule 1; only the feature axes are full-width).
+uint64_t feature_width(const TensorSpec& tensor);
 
 }  // namespace tt::tt_metal::internal::disaggregation

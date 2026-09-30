@@ -7,18 +7,30 @@
 #include <cstdint>
 #include <variant>
 
+#include <tt-metalium/shape.hpp>
+#include <tt-metalium/tensor/spec/layout/tensor_layout.hpp>
+#include <tt-metalium/tensor/spec/memory_config/memory_config.hpp>
+#include <tt-metalium/tensor/spec/tensor_spec.hpp>
+
 #include "internal/disaggregation/kv_layout_spec.hpp"
 
 namespace tt::tt_metal::internal::disaggregation {
 namespace {
 
-// Skeleton-level tests: exercise the self-contained parts of the spec (TemporalPolicy,
-// Distribution, MemLayout, AddressingMode) that do not require constructing a full TensorSpec.
-// inner_footprint() and the TensorSpec-dependent behaviour are covered when they land.
+// A minimal interleaved TensorSpec — has_sequence() reads only `temporal`, so the tensor is a stand-in
+// (KvLayoutSpec has no default ctor because TensorSpec requires a shape + layout).
+TensorSpec dummy_tensor() {
+    return TensorSpec(
+        Shape{1, kTile, kTile}, TensorLayout(DataType::BFLOAT8_B, PageConfig(Layout::TILE), MemoryConfig{}));
+}
+
+// Skeleton-level tests: exercise the collapsed spec's self-contained parts (TemporalPolicy,
+// AddressingMode, has_sequence) and the GenerationPolicy defaults. The TensorSpec-dependent
+// derivations (sequence_axis / feature_width / chunk_size_bytes) are covered end-to-end with real
+// ND-sharded TensorSpecs in test_to_chunk_map.cpp.
 
 constexpr uint32_t EXPECTED_WINDOW_TOKENS = 4096;
 constexpr uint32_t EXPECTED_CONV_WIDTH = 3;  // conv kernel 4 -> retain last 3
-constexpr uint32_t EXPECTED_MESH_AXIS = 1;
 
 // --- TemporalPolicy ---
 
@@ -45,25 +57,31 @@ TEST(KvLayoutSpec, CPU_TemporalPolicyRecurrentIsNone) {
     EXPECT_TRUE(std::holds_alternative<temporal::None>(policy));
 }
 
-// --- Distribution ---
+// --- has_sequence(): derived from temporal, not stored ---
 
-TEST(KvLayoutSpec, CPU_DistributionMixesShardAndReplicate) {
-    // MLA-like: a head axis replicated, a sequence axis sharded onto a mesh axis.
-    Distribution dist;
-    dist.per_axis.push_back(Replicate{});
-    dist.per_axis.push_back(Shard{.mesh_axis = MeshAxis{EXPECTED_MESH_AXIS}});
+TEST(KvLayoutSpec, CPU_HasSequenceFromTemporal) {
+    KvLayoutSpec attn{.tensor = dummy_tensor(), .temporal = temporal::Dense{}};
+    EXPECT_TRUE(attn.has_sequence());
 
-    ASSERT_EQ(dist.per_axis.size(), 2u);
-    EXPECT_TRUE(std::holds_alternative<Replicate>(dist.per_axis[0]));
-    ASSERT_TRUE(std::holds_alternative<Shard>(dist.per_axis[1]));
-    EXPECT_EQ(std::get<Shard>(dist.per_axis[1]).mesh_axis.get(), EXPECTED_MESH_AXIS);
+    KvLayoutSpec swa{.tensor = dummy_tensor(),
+                     .temporal = temporal::Window{.width = WindowTokens{EXPECTED_WINDOW_TOKENS}}};
+    EXPECT_TRUE(swa.has_sequence());
+
+    // Recurrent / conv summaries have no per-token sequence axis.
+    KvLayoutSpec conv{.tensor = dummy_tensor(),
+                      .temporal = temporal::Rolling{.width = RollingWidth{EXPECTED_CONV_WIDTH}}};
+    EXPECT_FALSE(conv.has_sequence());
+
+    KvLayoutSpec ssm{.tensor = dummy_tensor(), .temporal = temporal::None{}};
+    EXPECT_FALSE(ssm.has_sequence());
 }
 
-// --- MemLayout / AddressingMode defaults ---
+// --- GenerationPolicy / AddressingMode defaults ---
 
-TEST(KvLayoutSpec, CPU_MemLayoutDefaultsToOptimalBankOrder) {
-    MemLayout layout;
-    EXPECT_EQ(layout.bank_order, BankOrder::Optimal);
+TEST(KvLayoutSpec, CPU_GenerationPolicyDefaultsToOptimalBankOrder) {
+    GenerationPolicy policy;
+    EXPECT_EQ(policy.bank_order, BankOrder::Optimal);
+    EXPECT_EQ(policy.bank_scheme, BankScheme::Natural);
 }
 
 TEST(KvLayoutSpec, CPU_AddressingSupportsBothSlotAndPaged) {
