@@ -5,6 +5,8 @@
 #pragma once
 
 #include <tt-metalium/runtime_args_data.hpp>
+#include <array>
+#include <algorithm>
 
 #include "all_gather_async_device_operation_types.hpp"
 #include "ttnn/device_operation.hpp"
@@ -15,6 +17,17 @@ struct AllGatherProgramArtifacts {
     // Cache the binding objects, not their payload pointers: dispatch may relocate data().
     tt::tt_metal::RuntimeArgsData* reader_common_args;
     tt::tt_metal::RuntimeArgsData* writer_common_args;
+    using RuntimeArgs = std::array<uint32_t, 5>;
+    static RuntimeArgs collect_runtime_args(
+        const std::optional<GlobalSemaphore>& barrier,
+        const std::vector<GlobalSemaphore>& semaphores,
+        const Tensor& input,
+        const Tensor& output);
+
+    void override_runtime_arguments(const RuntimeArgs& args) const {
+        std::copy(args.begin(), args.end(), reader_common_args->data());
+        std::copy(args.begin(), args.end(), writer_common_args->data());
+    }
 };
 
 struct DefaultMeshWorkloadFactory {
@@ -72,13 +85,5 @@ AllGatherProgramArtifacts build_all_gather_async_minimal_default_program_artifac
     CoreCoord core_grid_offset,
     bool reverse_order,
     const std::optional<CoreRangeSet>& sub_core_grid = std::nullopt);
-
-// Runtime argument override function
-void all_gather_async_minimal_default_helper_override_runtime_arguments(
-    const AllGatherProgramArtifacts& artifacts,
-    const std::optional<GlobalSemaphore>& barrier_semaphore,
-    const std::vector<GlobalSemaphore>& semaphore,
-    const Tensor& input,
-    const Tensor& output);
 
 }  // namespace ttnn

@@ -51,13 +51,6 @@ namespace ttnn {
 
 namespace operations::experimental::ccl::detail {
 
-// Positions of the penult intermediate address in the ring reader/writer runtime-arg lists for scatter
-// dims 1-3. The override helper re-patches that address by index on every program-cache hit, so the
-// builder checks the lists against these before appending the fused-op / mux / fabric args. The two
-// unit-range args (unit_start, unit_end) sit in front of it; anything inserted before it must move these.
-constexpr uint32_t RING_READER_PENULT_ADDR_ARG_IDX = 13;
-constexpr uint32_t RING_WRITER_PENULT_ADDR_ARG_IDX = 18;
-
 std::unordered_map<std::string, uint32_t> get_ring_reader_named_compile_args(
     const uint32_t ring_index,
     const uint32_t ring_size,
@@ -874,41 +867,22 @@ ReduceScatterProgramArtifacts build_ring_reduce_scatter_minimal_async_program_ar
                 std::vector<uint32_t> reader_rt_args;
                 if (normalized_dim == 0) {
                     reader_rt_args = {
-                        input_tensor.buffer()->address(),         // input_tensor_address
-                        intermediate_tensor.buffer()->address(),  // intermediate_tensor_address
-                        semaphore.at(dir).address(),              // out_ready_semaphore for this dir
-                        dir,                                      // direction
-                        chunks_per_sync_val,                      // chunks_per_sync
-                        start_tiles_read,                         // start_tiles_read
-                        start_tiles_to_read,                      // start_tiles_to_read
+                        dir,                  // direction
+                        chunks_per_sync_val,  // chunks_per_sync
+                        start_tiles_read,     // start_tiles_read
+                        start_tiles_to_read,  // start_tiles_to_read
                     };
                 } else {
                     reader_rt_args = {
-                        input_tensor.buffer()->address(),         // input_tensor_address
-                        intermediate_tensor.buffer()->address(),  // intermediate_tensor_address
-                        output_tensor.buffer()->address(),        // output_tensor_address
-                        semaphore.at(dir).address(),              // out_ready_semaphore for this dir
-                        semaphore.at(!dir).address(),             // out_ready_semaphore for opposite dir
-                        dir,                                      // direction
-                        chunks_per_sync_val,                      // chunks_per_sync
-                        start_tiles_read,                         // start_tiles_read
-                        start_tiles_to_read,                      // start_tiles_to_read
-                        start_pages_read_in_row,                  // start_pages_read_in_row
-                        start_row_offset,                         // start_row_offset
-                        unit_start,                               // unit_start
-                        unit_end,                                 // unit_end
-                        // penult_intermediate_tensor_address; 0 (unread) on the tiled staging layout
-                        use_contiguous_interm ? penult_intermediate_tensor->buffer()->address() : 0,
+                        dir,                      // direction
+                        chunks_per_sync_val,      // chunks_per_sync
+                        start_tiles_read,         // start_tiles_read
+                        start_tiles_to_read,      // start_tiles_to_read
+                        start_pages_read_in_row,  // start_pages_read_in_row
+                        start_row_offset,         // start_row_offset
+                        unit_start,               // unit_start
+                        unit_end,                 // unit_end
                     };
-                }
-                if (normalized_dim != 0) {
-                    TT_FATAL(
-                        reader_rt_args.size() ==
-                            operations::experimental::ccl::detail::RING_READER_PENULT_ADDR_ARG_IDX + 1,
-                        "ring reader runtime-arg layout changed ({} args); update RING_READER_PENULT_ADDR_ARG_IDX and "
-                        "the "
-                        "override helper",
-                        reader_rt_args.size());
                 }
                 if (fuse_op) {
                     fused_op_signaler->push_reduce_scatter_fused_op_rt_args(reader_rt_args);
@@ -920,58 +894,32 @@ ReduceScatterProgramArtifacts build_ring_reduce_scatter_minimal_async_program_ar
                 std::vector<uint32_t> writer_rt_args;
                 if (normalized_dim == 0) {
                     writer_rt_args = {
-                        intermediate_tensor.buffer()->address(),                     // intermediate_tensor_address
-                        output_tensor.buffer()->address(),                           // output_tensor_address
                         virtual_core.x,                                              // this core.x
                         virtual_core.y,                                              // this core.y
                         opposite_core_coord.x,                                       // opposite direction core.x
                         opposite_core_coord.y,                                       // opposite direction core.y
-                        semaphore.at(dir).address(),                                 // out_ready_semaphore for this dir
-                        semaphore.at(num_directions_per_link).address(),             // batch_ready_semaphore
                         barrier_semaphore.has_value() && !using_persistent_buffers,  // use_barrier_sem
-                        barrier_semaphore.has_value()                                // barrier_sem
-                            ? barrier_semaphore.value().address()
-                            : 0,
-                        dir,                  // direction
-                        chunks_per_sync_val,  // chunks_per_sync
-                        start_tiles_read,     // start_tiles_read
-                        start_tiles_to_read,  // tiles_to_read
+                        dir,                                                         // direction
+                        chunks_per_sync_val,                                         // chunks_per_sync
+                        start_tiles_read,                                            // start_tiles_read
+                        start_tiles_to_read,                                         // tiles_to_read
                     };
                 } else {
                     writer_rt_args = {
-                        intermediate_tensor.buffer()->address(),                     // intermediate_tensor_address
-                        output_tensor.buffer()->address(),                           // output_tensor_address
                         virtual_core.x,                                              // this core.x
                         virtual_core.y,                                              // this core.y
                         opposite_core_coord.x,                                       // opposite direction core.x
                         opposite_core_coord.y,                                       // opposite direction core.y
-                        semaphore.at(dir).address(),                                 // out_ready_semaphore for this dir
-                        semaphore.at(num_directions_per_link).address(),             // batch_ready_semaphore
                         barrier_semaphore.has_value() && !using_persistent_buffers,  // use_barrier_sem
-                        barrier_semaphore.has_value()                                // barrier_sem
-                            ? barrier_semaphore.value().address()
-                            : 0,
-                        dir,                      // direction
-                        chunks_per_sync_val,      // chunks_per_sync
-                        start_pages_read_in_row,  // start_pages_read_in_row
-                        start_row_offset,         // start_row_offset
-                        start_tiles_read,         // start_tiles_read
-                        start_tiles_to_read,      // tiles_to_read
-                        unit_start,               // unit_start
-                        unit_end,                 // unit_end
-                        // penult_intermediate_tensor_address; 0 (unread) on the tiled staging layout. Precedes
-                        // the mux/fabric-connection args appended after this block.
-                        use_contiguous_interm ? penult_intermediate_tensor->buffer()->address() : 0,
+                        dir,                                                         // direction
+                        chunks_per_sync_val,                                         // chunks_per_sync
+                        start_pages_read_in_row,                                     // start_pages_read_in_row
+                        start_row_offset,                                            // start_row_offset
+                        start_tiles_read,                                            // start_tiles_read
+                        start_tiles_to_read,                                         // tiles_to_read
+                        unit_start,                                                  // unit_start
+                        unit_end,                                                    // unit_end
                     };
-                }
-                if (normalized_dim != 0) {
-                    TT_FATAL(
-                        writer_rt_args.size() ==
-                            operations::experimental::ccl::detail::RING_WRITER_PENULT_ADDR_ARG_IDX + 1,
-                        "ring writer runtime-arg layout changed ({} args); update RING_WRITER_PENULT_ADDR_ARG_IDX and "
-                        "the "
-                        "override helper",
-                        writer_rt_args.size());
                 }
                 if (num_mux_cores_per_direction_per_link) {
                     // V2 fabric mux client connection: this worker is channel `worker` on its
@@ -1027,39 +975,17 @@ ReduceScatterProgramArtifacts build_ring_reduce_scatter_minimal_async_program_ar
     }
 
     // Common bindings: input, intermediate, output, penult, barrier, sem0, sem1, ack.
-    const std::vector<uint32_t> common_args = {
-        input_tensor.buffer()->address(),
-        intermediate_tensor.buffer()->address(),
-        output_tensor.buffer()->address(),
-        penult_intermediate_tensor.has_value() ? penult_intermediate_tensor->buffer()->address() : 0,
-        barrier_semaphore.has_value() ? barrier_semaphore->address() : 0,
-        semaphore.at(0).address(),
-        semaphore.at(1).address(),
-        semaphore.at(2).address()};
+    const auto common_args = ReduceScatterProgramArtifacts::collect_runtime_args(
+        true,
+        barrier_semaphore,
+        semaphore,
+        input_tensor,
+        intermediate_tensor,
+        output_tensor,
+        penult_intermediate_tensor);
     SetCommonRuntimeArgs(program, reader_kernel_id, common_args);
     SetCommonRuntimeArgs(program, writer_kernel_id, common_args);
     return {&GetCommonRuntimeArgs(program, reader_kernel_id), &GetCommonRuntimeArgs(program, writer_kernel_id)};
-}
-
-void ring_reduce_scatter_minimal_async_helper_override_runtime_arguments(
-    const ReduceScatterProgramArtifacts& artifacts,
-    const std::optional<tt::tt_metal::GlobalSemaphore>& barrier_semaphore,
-    const std::vector<tt::tt_metal::GlobalSemaphore>& semaphore,
-    const Tensor& input,
-    const Tensor& intermed,
-    const Tensor& output,
-    const std::optional<Tensor>& penult_intermediate) {
-    const std::array<uint32_t, 8> addresses = {
-        input.buffer()->address(),
-        intermed.buffer()->address(),
-        output.buffer()->address(),
-        penult_intermediate.has_value() ? penult_intermediate->buffer()->address() : 0,
-        barrier_semaphore.has_value() ? barrier_semaphore->address() : 0,
-        semaphore.at(0).address(),
-        semaphore.at(1).address(),
-        semaphore.at(2).address()};
-    std::copy(addresses.begin(), addresses.end(), artifacts.reader_common_args->data());
-    std::copy(addresses.begin(), addresses.end(), artifacts.writer_common_args->data());
 }
 
 ReduceScatterProgramArtifacts build_line_reduce_scatter_minimal_async_program_artifacts(
@@ -1575,10 +1501,6 @@ ReduceScatterProgramArtifacts build_line_reduce_scatter_minimal_async_program_ar
 
                 // Reader RT args
                 std::vector<uint32_t> reader_rt_args = {
-                    input_tensor.buffer()->address(),         // input_tensor_address
-                    intermediate_tensor.buffer()->address(),  // intermediate_tensor_address
-                    output_tensor.buffer()->address(),        // output_tensor_address
-                    semaphore.at(0).address(),                // remote transfer sync semaphore
                     fwd_bwd_semaphore_address,
                     is_forward,                    // is_forward
                     is_first_device_in_direction,  // is_first_device_in_direction
@@ -1609,27 +1531,21 @@ ReduceScatterProgramArtifacts build_line_reduce_scatter_minimal_async_program_ar
                     mesh_device->worker_core_from_logical_core(termination_master_logical_core);
 
                 std::vector<uint32_t> writer_rt_args = {
-                    intermediate_tensor.buffer()->address(),  // intermediate_tensor_address
-                    output_tensor.buffer()->address(),        // output_tensor_address
-                    virtual_core.x,                           // out_ready_sem_noc0_x
-                    virtual_core.y,                           // out_ready_sem_noc0_y
-                    semaphore.at(0).address(),                // remote transfer sync semaphore
+                    virtual_core.x,  // out_ready_sem_noc0_x
+                    virtual_core.y,  // out_ready_sem_noc0_y
                     fwd_bwd_semaphore_address,
                     opposite_core_coord.x,
                     opposite_core_coord.y,
                     barrier_semaphore.has_value() && !using_persistent_buffers,  // use_barrier_sem
-                    barrier_semaphore.has_value()                                // synchronize barrier semaphore
-                        ? barrier_semaphore.value().address()
-                        : 0,
-                    is_forward,                    // is_forward
-                    is_first_device_in_direction,  // is_first_device_in_direction
-                    num_targets_in_direction,      // num_targets_in_direction
-                    do_final_reduction,            // do_final_reduction
-                    chunks_per_sync_val,           // chunks_per_sync
-                    start_pages_read_in_row,       // start_pages_read_in_row
-                    start_row_offset,              // start_row_offset
-                    start_tiles_read,              // start_tiles_read
-                    start_tiles_to_read,           // start_tiles_to_read
+                    is_forward,                                                  // is_forward
+                    is_first_device_in_direction,                                // is_first_device_in_direction
+                    num_targets_in_direction,                                    // num_targets_in_direction
+                    do_final_reduction,                                          // do_final_reduction
+                    chunks_per_sync_val,                                         // chunks_per_sync
+                    start_pages_read_in_row,                                     // start_pages_read_in_row
+                    start_row_offset,                                            // start_row_offset
+                    start_tiles_read,                                            // start_tiles_read
+                    start_tiles_to_read,                                         // start_tiles_to_read
                 };
                 append_fabric_mux_connection_rt_args(
                     mux_connection_valid(dir),
@@ -1662,44 +1578,36 @@ ReduceScatterProgramArtifacts build_line_reduce_scatter_minimal_async_program_ar
     }
 
     // Common bindings: input, intermediate, output, penult, barrier, sem0, sem1, ack.
-    const std::vector<uint32_t> common_args = {
-        input_tensor.buffer()->address(),
-        intermediate_tensor.buffer()->address(),
-        output_tensor.buffer()->address(),
-        0,
-        barrier_semaphore.has_value() ? barrier_semaphore->address() : 0,
-        semaphore.at(0).address(),
-        0,
-        0};
+    const auto common_args = ReduceScatterProgramArtifacts::collect_runtime_args(
+        false, barrier_semaphore, semaphore, input_tensor, intermediate_tensor, output_tensor);
     SetCommonRuntimeArgs(program, reader_kernel_id, common_args);
     SetCommonRuntimeArgs(program, writer_kernel_id, common_args);
     return {&GetCommonRuntimeArgs(program, reader_kernel_id), &GetCommonRuntimeArgs(program, writer_kernel_id)};
-}
-
-void line_reduce_scatter_minimal_async_helper_override_runtime_arguments(
-    const ReduceScatterProgramArtifacts& artifacts,
-    const std::optional<tt::tt_metal::GlobalSemaphore>& barrier_semaphore,
-    const std::vector<tt::tt_metal::GlobalSemaphore>& semaphore,
-    const Tensor& input,
-    const Tensor& intermed,
-    const Tensor& output) {
-    const std::array<uint32_t, 8> addresses = {
-        input.buffer()->address(),
-        intermed.buffer()->address(),
-        output.buffer()->address(),
-        0,
-        barrier_semaphore.has_value() ? barrier_semaphore->address() : 0,
-        semaphore.at(0).address(),
-        0,
-        0};
-    std::copy(addresses.begin(), addresses.end(), artifacts.reader_common_args->data());
-    std::copy(addresses.begin(), addresses.end(), artifacts.writer_common_args->data());
 }
 
 }  // namespace ttnn
 
 // Implementations for the prim namespace - wrappers to ttnn namespace functions
 namespace ttnn::experimental::prim {
+
+ReduceScatterProgramArtifacts::RuntimeArgs ReduceScatterProgramArtifacts::collect_runtime_args(
+    bool is_ring,
+    const std::optional<GlobalSemaphore>& barrier,
+    const std::vector<GlobalSemaphore>& semaphores,
+    const Tensor& input,
+    const Tensor& intermediate,
+    const Tensor& output,
+    const std::optional<Tensor>& penult) {
+    return {
+        input.buffer()->address(),
+        intermediate.buffer()->address(),
+        output.buffer()->address(),
+        penult ? penult->buffer()->address() : 0,
+        barrier ? barrier->address() : 0,
+        semaphores.at(0).address(),
+        is_ring ? semaphores.at(1).address() : 0,
+        is_ring ? semaphores.at(2).address() : 0};
+}
 
 ReduceScatterProgramArtifacts build_ring_reduce_scatter_minimal_async_program_artifacts(
     tt::tt_metal::Program& program,
@@ -1801,29 +1709,6 @@ ReduceScatterProgramArtifacts build_line_reduce_scatter_minimal_async_program_ar
         compute_kernel_config);
 }
 
-void ring_reduce_scatter_minimal_async_helper_override_runtime_arguments(
-    const ReduceScatterProgramArtifacts& artifacts,
-    const std::optional<tt::tt_metal::GlobalSemaphore>& barrier_semaphore,
-    const std::vector<tt::tt_metal::GlobalSemaphore>& semaphore,
-    const Tensor& input,
-    const Tensor& intermed,
-    const Tensor& output,
-    const std::optional<Tensor>& penult_intermediate) {
-    ::ttnn::ring_reduce_scatter_minimal_async_helper_override_runtime_arguments(
-        artifacts, barrier_semaphore, semaphore, input, intermed, output, penult_intermediate);
-}
-
-void line_reduce_scatter_minimal_async_helper_override_runtime_arguments(
-    const ReduceScatterProgramArtifacts& artifacts,
-    const std::optional<tt::tt_metal::GlobalSemaphore>& barrier_semaphore,
-    const std::vector<tt::tt_metal::GlobalSemaphore>& semaphore,
-    const Tensor& input,
-    const Tensor& intermed,
-    const Tensor& output) {
-    ::ttnn::line_reduce_scatter_minimal_async_helper_override_runtime_arguments(
-        artifacts, barrier_semaphore, semaphore, input, intermed, output);
-}
-
 // Mesh Workload Factory implementations
 RingReduceScatterMeshWorkloadFactory::cached_mesh_workload_t RingReduceScatterMeshWorkloadFactory::create_mesh_workload(
     const ReduceScatterMinimalAsyncParams& operation_attributes,
@@ -1913,15 +1798,16 @@ void RingReduceScatterMeshWorkloadFactory::override_runtime_arguments(
     const std::optional<Tensor> penult_intermediate =
         tensor_return_value.size() > 2 ? std::optional<Tensor>(tensor_return_value.at(2)) : std::nullopt;
 
+    const auto args = ReduceScatterProgramArtifacts::collect_runtime_args(
+        true,
+        operation_attributes.barrier_semaphore,
+        operation_attributes.semaphore,
+        input,
+        intermediate,
+        output,
+        penult_intermediate);
     for (const auto& [coordinate_range, shared_vars] : cached_workload.shared_variables) {
-        ttnn::experimental::prim::ring_reduce_scatter_minimal_async_helper_override_runtime_arguments(
-            shared_vars,
-            operation_attributes.barrier_semaphore,
-            operation_attributes.semaphore,
-            input,
-            intermediate,
-            output,
-            penult_intermediate);
+        shared_vars.override_runtime_arguments(args);
     }
 }
 
@@ -2000,18 +1886,13 @@ void LineReduceScatterMeshWorkloadFactory::override_runtime_arguments(
     const auto& intermediate = tensor_return_value.at(0);
     const auto& output = tensor_return_value.at(1);
 
+    TT_FATAL(
+        operation_attributes.topology == ttnn::ccl::Topology::Linear,
+        "LineReduceScatterMeshWorkloadFactory expects Linear topology");
+    const auto args = ReduceScatterProgramArtifacts::collect_runtime_args(
+        false, operation_attributes.barrier_semaphore, operation_attributes.semaphore, input, intermediate, output);
     for (const auto& [coordinate_range, shared_vars] : cached_workload.shared_variables) {
-        TT_FATAL(
-            operation_attributes.topology == ttnn::ccl::Topology::Linear,
-            "LineReduceScatterMeshWorkloadFactory expects Linear topology");
-
-        ttnn::experimental::prim::line_reduce_scatter_minimal_async_helper_override_runtime_arguments(
-            shared_vars,
-            operation_attributes.barrier_semaphore,
-            operation_attributes.semaphore,
-            input,
-            intermediate,
-            output);
+        shared_vars.override_runtime_arguments(args);
     }
 }
 

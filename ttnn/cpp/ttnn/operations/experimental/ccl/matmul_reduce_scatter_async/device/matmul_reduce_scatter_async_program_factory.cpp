@@ -140,6 +140,13 @@ void MatmulReduceScatterAsyncProgramFactory::override_runtime_arguments(
     const MatmulReduceScatterAsyncParams& args,
     const MatmulReduceScatterAsyncInputs& tensor_args,
     MatmulReduceScatterAsyncResult& output_tensors) {
+    const auto ccl_args = ReduceScatterProgramArtifacts::collect_runtime_args(
+        true,
+        args.reduce_scatter_params.barrier_semaphore,
+        args.reduce_scatter_params.semaphore,
+        output_tensors.mm,
+        tensor_args.persistent_intermediate,
+        output_tensors.reduce_scatter);
     for (auto& [coordinate_range, program] : cached_workload.workload.get_programs()) {
         auto& shared_vars = cached_workload.shared_variables.at(coordinate_range);
 
@@ -154,14 +161,7 @@ void MatmulReduceScatterAsyncProgramFactory::override_runtime_arguments(
             matmul_output_tensors);
 
         // Call reduce scatter runtime arguments override directly using artifacts
-        ttnn::experimental::prim::ring_reduce_scatter_minimal_async_helper_override_runtime_arguments(
-            shared_vars.reduce_scatter_artifacts,
-            args.reduce_scatter_params.barrier_semaphore,
-            args.reduce_scatter_params.semaphore,
-            output_tensors.mm,
-            tensor_args.persistent_intermediate,
-            output_tensors.reduce_scatter,
-            /*penult_intermediate=*/std::nullopt);
+        shared_vars.reduce_scatter_artifacts.override_runtime_arguments(ccl_args);
     }
 }
 

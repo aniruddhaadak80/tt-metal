@@ -19,7 +19,7 @@ void kernel_main() {
     }
 
     const uint32_t signal_semaphore_addr = get_semaphore(get_arg_val<uint32_t>(arg_idx++));
-    const size_t out_ready_sem_bank_addr = get_arg_val<uint32_t>(arg_idx++);
+    const size_t out_ready_sem_bank_addr = get_common_arg_val<uint32_t>(0);
     const uint32_t out_ready_sem_wait_value = get_arg_val<uint32_t>(arg_idx++);
     volatile tt_l1_ptr uint32_t* out_ready_sema =
         reinterpret_cast<volatile tt_l1_ptr uint32_t*>(out_ready_sem_bank_addr);

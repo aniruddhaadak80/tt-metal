@@ -7,25 +7,32 @@ import torch
 import ttnn
 
 
-@pytest.mark.parametrize("mesh_device", [(2, 4)], indirect=True)
 @pytest.mark.parametrize(
-    "device_params",
-    [{"fabric_config": ttnn.FabricConfig.FABRIC_2D, "trace_region_size": 2**20}],
-    indirect=True,
+    "mesh_device,device_params,topology",
+    [
+        ((2, 4), {"fabric_config": ttnn.FabricConfig.FABRIC_2D, "trace_region_size": 2**20}, ttnn.Topology.Linear),
+        ((1, 8), {"fabric_config": ttnn.FabricConfig.FABRIC_1D_RING, "trace_region_size": 2**20}, ttnn.Topology.Ring),
+    ],
+    indirect=["mesh_device", "device_params"],
+    ids=["linear_2x4", "ring_1x8"],
 )
 @pytest.mark.parametrize(
-    "op,dim", [("all_gather", 3), ("all_gather_sharded", 3), ("reduce_scatter", 0), ("reduce_scatter", 3)]
+    "op,dim",
+    [("all_gather", 3), ("all_gather_sharded", 3), ("reduce_scatter", 0), ("reduce_scatter", 3), ("all_reduce", 3)],
 )
-@pytest.mark.parametrize("topology", [ttnn.Topology.Linear, ttnn.Topology.Ring])
 @pytest.mark.parametrize("use_barrier", [False, True])
 def test_ccl_dispatch_cache_rebinding(mesh_device, op, dim, topology, use_barrier):
     """Rebind inputs/semaphores/outputs before and after trace payload relocation."""
+    group_size = mesh_device.shape[1]
+    num_devices = mesh_device.get_num_devices()
+    if op == "all_gather_sharded" and group_size != 4:
+        pytest.skip("Llama sharded specialization requires a four-device gather")
     torch.manual_seed(0)
     grid = mesh_device.compute_with_storage_grid_size()
     cores = ttnn.CoreRangeSet({ttnn.CoreRange(ttnn.CoreCoord(0, 0), ttnn.CoreCoord(grid.x - 1, grid.y - 1))})
     is_gather = op.startswith("all_gather")
     input_memory = output_memory = ttnn.DRAM_MEMORY_CONFIG
-    local_shape = (4, 1, 32, 128)
+    local_shape = (group_size, 1, 32, group_size * 32)
     if op == "all_gather_sharded":
         local_shape = (1, 1, 32, 32)
         shard_grid = ttnn.CoreRangeSet({ttnn.CoreRange(ttnn.CoreCoord(0, 0), ttnn.CoreCoord(0, 0))})
@@ -37,9 +44,26 @@ def test_ccl_dispatch_cache_rebinding(mesh_device, op, dim, topology, use_barrie
             )
             for width in (32, 128)
         ]
+    intermediate_memory = None
+    if op == "all_reduce":
+        local_shape = (1, 1, 32, 128)
+        shard_grid = ttnn.CoreRangeSet({ttnn.CoreRange(ttnn.CoreCoord(0, 0), ttnn.CoreCoord(3, 0))})
+        input_memory = output_memory = ttnn.MemoryConfig(
+            ttnn.TensorMemoryLayout.WIDTH_SHARDED,
+            ttnn.BufferType.L1,
+            ttnn.ShardSpec(shard_grid, [32, 32], ttnn.ShardOrientation.ROW_MAJOR),
+        )
+        intermediate_memory = ttnn.MemoryConfig(
+            ttnn.TensorMemoryLayout.WIDTH_SHARDED,
+            ttnn.BufferType.L1,
+            ttnn.ShardSpec(shard_grid, [32, 32 * group_size], ttnn.ShardOrientation.ROW_MAJOR),
+        )
+    intermediates = []
     inputs, goldens, semaphores, barriers = [], [], [], []
     for iteration in range(2):
-        shards = [(torch.randint(0, 4, local_shape) + chip + iteration * 8).to(torch.bfloat16) for chip in range(8)]
+        shards = [
+            (torch.randint(0, 4, local_shape) + chip + iteration * 8).to(torch.bfloat16) for chip in range(num_devices)
+        ]
         inputs.append(
             ttnn.from_torch(
                 torch.cat(shards, dim=dim),
@@ -51,17 +75,43 @@ def test_ccl_dispatch_cache_rebinding(mesh_device, op, dim, topology, use_barrie
             )
         )
         expected = []
-        for row in range(2):
-            group = shards[row * 4 : (row + 1) * 4]
+        for row in range(mesh_device.shape[0]):
+            group = shards[row * group_size : (row + 1) * group_size]
             if is_gather:
-                expected.extend([torch.cat(group, dim=dim)] * 4)
+                expected.extend([torch.cat(group, dim=dim)] * group_size)
+            elif op == "all_reduce":
+                expected.extend([torch.stack(group).float().sum(0).to(torch.bfloat16)] * group_size)
             else:
-                expected.extend(torch.stack(group).float().sum(0).to(torch.bfloat16).chunk(4, dim=dim))
+                expected.extend(torch.stack(group).float().sum(0).to(torch.bfloat16).chunk(group_size, dim=dim))
+        if op == "all_reduce":
+            intermediates.append(
+                ttnn.empty(
+                    [1, 1, 32, 128 * group_size],
+                    dtype=ttnn.bfloat16,
+                    layout=ttnn.TILE_LAYOUT,
+                    device=mesh_device,
+                    memory_config=intermediate_memory,
+                )
+            )
         goldens.append(expected)
         semaphores.append([ttnn.create_global_semaphore(mesh_device, cores, 0) for _ in range(3)])
         barriers.append(ttnn.create_global_semaphore(mesh_device, cores, 0) if use_barrier else None)
 
+    # These cases must run their named topology; a fallback is not Ring coverage.
+    assert ttnn.get_usable_topology(inputs[0], topology=topology, cluster_axis=1) == topology
+
     def run(index):
+        if op == "all_reduce":
+            return ttnn.experimental.all_reduce_async(
+                inputs[index],
+                intermediates[index],
+                cluster_axis=1,
+                mesh_device=mesh_device,
+                multi_device_global_semaphore=semaphores[index][0],
+                memory_config=output_memory,
+                topology=topology,
+                num_links=1,
+            )
         kwargs = dict(
             dim=dim,
             cluster_axis=1,

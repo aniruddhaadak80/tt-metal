@@ -265,8 +265,7 @@ void kernel_main() {
     // ARGS
     ///////////////////////////////////////////////////
 
-    // Preserve the per-core/fused argument layout; bindings live in common arguments.
-    uint32_t arg_idx = 5;
+    uint32_t arg_idx = 0;
     // Load the input tensor spec
     address_t input_tensor_address = get_common_arg_val<address_t>(0);
     address_t interm_tensor_address = get_common_arg_val<address_t>(1);
@@ -288,7 +287,6 @@ void kernel_main() {
     // Chunk-paged layout only: staging buffer holding the 2nd-last iteration's direct-to-remote
     // contribution, read back as the 3rd term of the final iteration's local reduce. The tiled
     // layout reads that term from output_tensor instead and leaves this address at 0.
-    ++arg_idx;  // Reserved binding slot; the address is now a common argument.
     address_t penult_intermediate_tensor_address = get_common_arg_val<address_t>(3);
 
     constexpr uint32_t ct_idx = 0;

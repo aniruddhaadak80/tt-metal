@@ -5,6 +5,8 @@
 #pragma once
 
 #include <tt-metalium/runtime_args_data.hpp>
+#include <array>
+#include <algorithm>
 #include <tt_stl/reflection.hpp>
 
 #include <cstdint>
@@ -26,6 +28,20 @@ struct ReduceScatterProgramArtifacts {
     // Cache the binding objects, not their payload pointers: dispatch may relocate data().
     tt::tt_metal::RuntimeArgsData* reader_common_args;
     tt::tt_metal::RuntimeArgsData* writer_common_args;
+    using RuntimeArgs = std::array<uint32_t, 8>;
+    static RuntimeArgs collect_runtime_args(
+        bool is_ring,
+        const std::optional<GlobalSemaphore>& barrier,
+        const std::vector<GlobalSemaphore>& semaphores,
+        const Tensor& input,
+        const Tensor& intermediate,
+        const Tensor& output,
+        const std::optional<Tensor>& penult = std::nullopt);
+
+    void override_runtime_arguments(const RuntimeArgs& args) const {
+        std::copy(args.begin(), args.end(), reader_common_args->data());
+        std::copy(args.begin(), args.end(), writer_common_args->data());
+    }
 };
 
 struct ReduceScatterMinimalAsyncParams {

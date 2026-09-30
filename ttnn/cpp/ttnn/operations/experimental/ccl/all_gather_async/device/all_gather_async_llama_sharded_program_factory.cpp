@@ -246,7 +246,6 @@ LlamaShardedMeshWorkloadFactory::cached_program_t LlamaShardedMeshWorkloadFactor
         }
         // Set reader runtime args
         std::vector<uint32_t> reader_rt_args = {
-            input_tensor.buffer()->address(),    // tensor_address0
             input_tensor_shard_num_pages,        // num_tiles_per_core
             worker_num_tiles_to_read,            // num_tiles_to_read
             input_first_core_tile_start_offset,  // first_core_tile_start_offset
@@ -265,8 +264,6 @@ LlamaShardedMeshWorkloadFactory::cached_program_t LlamaShardedMeshWorkloadFactor
         bool reset_global_semaphore = (link == 0) && !enable_async_output_tensor;
         uint32_t out_ready_sem_wait_value = ring_size * num_links;
         std::vector<uint32_t> writer_rt_args = {
-            output_tensor.buffer()->address(),    // tensor_address0
-            semaphore.address(),                  // out_ready_sem_bank_addr (absolute address)
             output_tensor_shard_num_pages,        // num_tiles_per_core
             worker_num_tiles_to_read,             // num_tiles_to_read
             output_first_core_tile_start_offset,  // first_core_tile_start_offset
@@ -276,11 +273,8 @@ LlamaShardedMeshWorkloadFactory::cached_program_t LlamaShardedMeshWorkloadFactor
             drain_sync_core.x,                    // out_ready_sem_noc0_x
             drain_sync_core.y,                    // out_ready_sem_noc0_y
             out_ready_sem_wait_value,             // out_ready_sem_wait_value
-            barrier_semaphore.has_value()         // barrier_sem
-                ? barrier_semaphore.value().address()
-                : 0,
-            barrier_core.x,  // barrier_sem_noc0_x
-            barrier_core.y   // barrier_sem_noc0_y
+            barrier_core.x,                       // barrier_sem_noc0_x
+            barrier_core.y                        // barrier_sem_noc0_y
         };
         writer_rt_args.insert(writer_rt_args.end(), output_tensor_cores_x.begin(), output_tensor_cores_x.end());
         writer_rt_args.insert(writer_rt_args.end(), output_tensor_cores_y.begin(), output_tensor_cores_y.end());
@@ -307,13 +301,15 @@ LlamaShardedMeshWorkloadFactory::cached_program_t LlamaShardedMeshWorkloadFactor
         tt::tt_metal::SetRuntimeArgs(program, worker_sender_writer_kernel_id, {core}, writer_rt_args);
     }
 
-    shared_variables_t shared{};
-    shared.reader_args.reserve(sender_worker_cores.size());
-    shared.writer_args.reserve(sender_worker_cores.size());
-    for (const auto& core : sender_worker_cores) {
-        shared.reader_args.push_back(&GetRuntimeArgs(program, worker_sender_reader_kernel_id, core));
-        shared.writer_args.push_back(&GetRuntimeArgs(program, worker_sender_writer_kernel_id, core));
-    }
+    SetCommonRuntimeArgs(program, worker_sender_reader_kernel_id, {input_tensor.buffer()->address()});
+    SetCommonRuntimeArgs(
+        program,
+        worker_sender_writer_kernel_id,
+        {output_tensor.buffer()->address(), semaphore.address(), barrier_semaphore ? barrier_semaphore->address() : 0});
+    shared_variables_t shared{
+        .reader_args = &GetCommonRuntimeArgs(program, worker_sender_reader_kernel_id),
+        .writer_args = &GetCommonRuntimeArgs(program, worker_sender_writer_kernel_id),
+    };
     return {std::move(program), std::move(shared)};
 }
 
@@ -328,17 +324,11 @@ void LlamaShardedMeshWorkloadFactory::override_runtime_arguments(
     const auto& barrier = operation_attributes.barrier_semaphore;
     const auto barrier_address = barrier.has_value() ? barrier->address() : 0;
     for (const auto& [coordinate_range, shared] : cached_workload.shared_variables) {
-        for (auto* args : shared.reader_args) {
-            args->data()[0] = input_address;
-        }
-        for (auto* args : shared.writer_args) {
-            auto* data = args->data();
-            data[0] = output_address;
-            data[1] = semaphore_address;
-            if (barrier.has_value()) {
-                data[11] = barrier_address;
-            }
-        }
+        shared.reader_args->data()[0] = input_address;
+        auto* writer = shared.writer_args->data();
+        writer[0] = output_address;
+        writer[1] = semaphore_address;
+        writer[2] = barrier_address;
     }
 }
 

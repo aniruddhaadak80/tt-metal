@@ -230,6 +230,11 @@ void AllGatherMatmulAsyncMeshWorkloadFactory::override_runtime_arguments(
     const AllGatherMatmulAsyncInputs& tensor_args,
     AllGatherMatmulAsyncResult& tensor_return_value) {
     // Fuse the override runtime arguments callbacks
+    const auto ccl_args = AllGatherProgramArtifacts::collect_runtime_args(
+        operation_attributes.all_gather_async_attributes.barrier_semaphore,
+        operation_attributes.all_gather_async_attributes.semaphore,
+        tensor_args.input_tensor,
+        tensor_return_value[0]);
     for (auto& [coordinate_range, program] : cached_workload.workload.get_programs()) {
         auto& shared_vars = cached_workload.shared_variables.at(coordinate_range);
 
@@ -264,14 +269,7 @@ void AllGatherMatmulAsyncMeshWorkloadFactory::override_runtime_arguments(
                 }},
             shared_vars.matmul_shared_variables);
 
-        auto& all_gather_async_shared_variables = shared_vars.all_gather_async_shared_variables;
-        const auto& all_gather_async_attributes = operation_attributes.all_gather_async_attributes;
-        all_gather_async_minimal_default_helper_override_runtime_arguments(
-            all_gather_async_shared_variables,
-            all_gather_async_attributes.barrier_semaphore,
-            all_gather_async_attributes.semaphore,
-            tensor_args.input_tensor,
-            tensor_return_value[0]);
+        shared_vars.all_gather_async_shared_variables.override_runtime_arguments(ccl_args);
     }
 }
 

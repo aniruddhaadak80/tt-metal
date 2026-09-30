@@ -45,8 +45,7 @@ void kernel_main() {
     // RUNTIME ARGS
     ///////////////////////////////////////////////////
 
-    // Preserve the per-core/fused argument layout; bindings live in common arguments.
-    uint32_t arg_idx = 3;
+    uint32_t arg_idx = 0;
     address_t input_tensor_address = get_common_arg_val<address_t>(0);
     address_t output_tensor_address = get_common_arg_val<address_t>(1);
     const bool direction = get_arg_val<uint32_t>(arg_idx++);  // 0 is forward, 1 is backward

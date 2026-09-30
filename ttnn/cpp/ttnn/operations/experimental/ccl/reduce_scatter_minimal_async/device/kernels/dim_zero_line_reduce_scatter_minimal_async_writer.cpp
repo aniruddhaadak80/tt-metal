@@ -78,19 +78,16 @@ void kernel_main() {
     // ARGS
     ///////////////////////////////////////////////////
 
-    // Preserve the per-core/fused argument layout; bindings live in common arguments.
-    uint32_t arg_idx = 2;
+    uint32_t arg_idx = 0;
     address_t intermediate_address = get_common_arg_val<address_t>(1);
     address_t output_address = get_common_arg_val<address_t>(2);
     const uint8_t out_ready_sem_noc0_x = get_arg_val<uint32_t>(arg_idx++);
     const uint8_t out_ready_sem_noc0_y = get_arg_val<uint32_t>(arg_idx++);
-    ++arg_idx;  // Reserved binding slot; the address is now a common argument.
     size_t out_ready_sem = get_common_arg_val<uint32_t>(5);
     Semaphore<> fwd_bwd_sem(get_arg_val<uint32_t>(arg_idx++));
     uint32_t opposite_core_sem_noc0_x = get_arg_val<uint32_t>(arg_idx++);
     uint32_t opposite_core_sem_noc0_y = get_arg_val<uint32_t>(arg_idx++);
     bool use_barrier_sem = get_arg_val<uint32_t>(arg_idx++);
-    ++arg_idx;  // Reserved binding slot; the address is now a common argument.
     size_t barrier_sem = get_common_arg_val<uint32_t>(4);
     const bool is_forward = get_arg_val<uint32_t>(arg_idx++);
     const bool is_first_device_in_direction = get_arg_val<uint32_t>(arg_idx++);

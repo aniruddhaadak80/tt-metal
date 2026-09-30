@@ -12,10 +12,10 @@
 namespace ttnn::experimental::prim {
 
 struct AllReduceAsyncSharedVariables {
-    // Bindings follow dispatch payload relocation through RuntimeArgsData::data().
-    std::vector<tt::tt_metal::RuntimeArgsData*> reader_args;
-    std::vector<tt::tt_metal::RuntimeArgsData*> writer_args;
-    std::vector<tt::tt_metal::RuntimeArgsData*> reduction_args;
+    // Cache binding objects; data() follows dispatch/trace payload relocation.
+    tt::tt_metal::RuntimeArgsData* reader_args;
+    tt::tt_metal::RuntimeArgsData* writer_args;
+    tt::tt_metal::RuntimeArgsData* reduction_args;
     tt::tt_metal::CBHandle cb_out{};
     tt::tt_metal::CBHandle cb_reduction{};
 };

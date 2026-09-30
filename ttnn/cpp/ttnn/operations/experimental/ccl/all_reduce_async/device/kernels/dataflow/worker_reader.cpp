@@ -27,7 +27,7 @@ void kernel_main() {
 
     size_t arg_idx = 0;
     // Load the input tensor spec
-    address_t tensor_address0 = get_arg_val<address_t>(arg_idx++);
+    address_t tensor_address0 = get_common_arg_val<address_t>(0);
     uint32_t num_tiles_per_core = get_arg_val<uint32_t>(arg_idx++);
     uint32_t num_tiles_to_read = get_arg_val<uint32_t>(arg_idx++);
     uint32_t first_core_tile_start_offset = get_arg_val<uint32_t>(arg_idx++);

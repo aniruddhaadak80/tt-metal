@@ -48,8 +48,8 @@ void kernel_main() {
 
     size_t arg_idx = 0;
     // Load the input tensor spec
-    address_t tensor_address0 = get_arg_val<address_t>(arg_idx++);
-    const size_t out_ready_sem_bank_addr = get_arg_val<uint32_t>(arg_idx++);
+    address_t tensor_address0 = get_common_arg_val<address_t>(0);
+    const size_t out_ready_sem_bank_addr = get_common_arg_val<uint32_t>(1);
     uint32_t num_tiles_per_core = get_arg_val<uint32_t>(arg_idx++);
     uint32_t num_tiles_to_read = get_arg_val<uint32_t>(arg_idx++);
     uint32_t first_core_tile_start_offset = get_arg_val<uint32_t>(arg_idx++);
@@ -59,7 +59,7 @@ void kernel_main() {
     const uint8_t out_ready_sem_noc0_x = get_arg_val<uint32_t>(arg_idx++);
     const uint8_t out_ready_sem_noc0_y = get_arg_val<uint32_t>(arg_idx++);
     uint32_t out_ready_sem_wait_value = get_arg_val<uint32_t>(arg_idx++);
-    size_t barrier_sem = get_arg_val<uint32_t>(arg_idx++);
+    size_t barrier_sem = get_common_arg_val<uint32_t>(2);
     const uint8_t barrier_sem_noc0_x = get_arg_val<uint32_t>(arg_idx++);
     const uint8_t barrier_sem_noc0_y = get_arg_val<uint32_t>(arg_idx++);
     tt_l1_ptr uint32_t* core_noc_x = (tt_l1_ptr uint32_t*)(get_arg_addr(arg_idx));

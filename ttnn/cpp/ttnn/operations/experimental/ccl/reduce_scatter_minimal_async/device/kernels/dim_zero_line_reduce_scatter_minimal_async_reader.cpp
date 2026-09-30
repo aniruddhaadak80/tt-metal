@@ -47,8 +47,7 @@ void kernel_main() {
     // ARGS
     ///////////////////////////////////////////////////
 
-    // Preserve the per-core/fused argument layout; bindings live in common arguments.
-    uint32_t arg_idx = 4;
+    uint32_t arg_idx = 0;
     // Load the input tensor spec
     address_t input_tensor_address = get_common_arg_val<address_t>(0);
     address_t intermediate_tensor_address = get_common_arg_val<address_t>(1);

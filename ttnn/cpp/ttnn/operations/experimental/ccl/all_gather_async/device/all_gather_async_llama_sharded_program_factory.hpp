@@ -13,9 +13,9 @@ namespace ttnn::experimental::prim {
 
 struct LlamaShardedMeshWorkloadFactory {
     struct shared_variables_t {
-        // Bindings follow dispatch payload relocation through RuntimeArgsData::data().
-        std::vector<tt::tt_metal::RuntimeArgsData*> reader_args;
-        std::vector<tt::tt_metal::RuntimeArgsData*> writer_args;
+        // Cache binding objects; data() follows dispatch/trace payload relocation.
+        tt::tt_metal::RuntimeArgsData* reader_args;
+        tt::tt_metal::RuntimeArgsData* writer_args;
     };
     using cached_mesh_workload_t = ttnn::device_operation::AdaptedCachedMeshWorkload<shared_variables_t>;
 

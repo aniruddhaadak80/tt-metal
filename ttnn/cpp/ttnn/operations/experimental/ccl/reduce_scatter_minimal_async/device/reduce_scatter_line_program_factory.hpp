@@ -68,13 +68,4 @@ ReduceScatterProgramArtifacts build_line_reduce_scatter_minimal_async_program_ar
     CoreCoord core_grid_offset,
     const std::optional<ttnn::DeviceComputeKernelConfig>& compute_kernel_config);
 
-// Override runtime arguments helper for line topology
-void line_reduce_scatter_minimal_async_helper_override_runtime_arguments(
-    const ReduceScatterProgramArtifacts& artifacts,
-    const std::optional<tt::tt_metal::GlobalSemaphore>& barrier_semaphore,
-    const std::vector<tt::tt_metal::GlobalSemaphore>& semaphore,
-    const Tensor& input,
-    const Tensor& intermed,
-    const Tensor& output);
-
 }  // namespace ttnn::experimental::prim

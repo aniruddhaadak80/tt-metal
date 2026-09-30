@@ -65,16 +65,4 @@ ReduceScatterProgramArtifacts build_ring_reduce_scatter_minimal_async_program_ar
     CoreCoord core_grid_offset,
     const std::optional<ttnn::DeviceComputeKernelConfig>& compute_kernel_config);
 
-// Override runtime arguments helper for ring topology
-void ring_reduce_scatter_minimal_async_helper_override_runtime_arguments(
-    const ReduceScatterProgramArtifacts& artifacts,
-    const std::optional<tt::tt_metal::GlobalSemaphore>& barrier_semaphore,
-    const std::vector<tt::tt_metal::GlobalSemaphore>& semaphore,
-    const Tensor& input,
-    const Tensor& intermed,
-    const Tensor& output,
-    // Contiguous staging layout only: the penult intermediate, whose address must be re-published because
-    // the op reallocates it per invocation. nullopt on the tiled layout, where the kernels never read it.
-    const std::optional<Tensor>& penult_intermediate);
-
 }  // namespace ttnn::experimental::prim
